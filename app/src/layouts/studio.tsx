@@ -1,20 +1,13 @@
 import type { ComponentProps, CSSProperties } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { SubmitInputFor } from "@higgsfield/fnf/client";
 import {
-  costQueryOptions,
   flattenFeedPages,
   jobsFeedQueryOptions,
-  prependGenerations,
   useFnfJobClient,
   useFnfMediaClient,
   useFnfScopeKey,
-  useGenerationRun,
-  useLiveFeedGenerations,
 } from "@higgsfield/fnf-react";
-import { Box as Icon3dBoxTopOutlined } from "lucide-react";
-import { PaintBucket as IconBucketOutlined } from "lucide-react";
 import { Compass as IconExploreOutlined } from "lucide-react";
 import { Folder as IconProjectsOutlined } from "lucide-react";
 import { Plus as IconPlusMediumOutlined } from "lucide-react";
@@ -22,7 +15,7 @@ import {
   PanelLeftClose as IconSidebarHiddenLeftWideOutlined,
   PanelLeftOpen as IconSidebarVisibleLeftWideOutlined,
 } from "lucide-react";
-import { Globe as IconWorldOutlined } from "lucide-react";
+import { Clock as IconClockOutlined, MapPin as IconMapPinOutlined } from "lucide-react";
 import { House as IconHomeFilled, Images as IconImagesFilled } from "@phosphor-icons/react";
 import { Icon } from "@higgsfield/quanta/icon";
 import { Button } from "@higgsfield/quanta/button";
@@ -50,33 +43,31 @@ import type {
   PromptSettingOption,
   PromptUploadOption,
 } from "@/components/studio-prompt-box";
-import { TEMPLATES } from "@/components/template-picker";
+import { TEMPLATE_PREVIEWS, TEMPLATES } from "@/components/template-picker";
 import type { TemplateItem } from "@/components/template-picker";
-import { UserGenerations } from "@/components/user-generations";
+import { StoryFeedGrid } from "@/components/story/story-feed";
+import { useStoriesFeed } from "@/components/story/use-stories-feed";
 import { appFaviconUrl, appMeta } from "@/lib/app-meta";
-import { getSignInUrl, STUDIO_JOBS, uploadAsset } from "@/lib/fnf.browser";
+import { getSignInUrl, uploadAsset } from "@/lib/fnf.browser";
 import {
   generationToAssetItem,
   generationToGalleryItem,
-  getGenerationFailureLabel,
-  getGenerationStatusLabel,
   mediaRefToAssetItem,
-  selectGenerationMedia,
 } from "@/lib/higgsfield-generation-results";
 import {
   flattenMediaPages,
   getNextCursor,
   getNextStudioCursor,
-  indexProjectItems,
 } from "@/lib/studio-history";
-import { linkProjectWithOneRetry } from "@/lib/project-link-retry";
 import {
   createStudioProjectFn,
   deleteStudioProjectFn,
-  linkStudioGenerationsFn,
   listStudioProjectsFn,
   renameStudioProjectFn,
 } from "@/lib/studio-projects.functions";
+import { createStoryFn } from "@/lib/story.functions";
+import type { StoryDTO } from "@/lib/story-engine.server";
+import { DEFAULT_DURATION_SECONDS, DURATION_OPTIONS, STORY_LOCATIONS } from "@/lib/story-templates";
 
 /**
  * Production-ready Studio scaffold: one FNF-backed prompt state is shared by
@@ -85,7 +76,6 @@ import {
  * Keep the four Studio pillars when adapting: sidebar, hero, prompt dock, feed.
  */
 
-type StudioGenerationInput = SubmitInputFor<typeof STUDIO_JOBS>;
 type StudioProject = MyProjectsProject;
 type StudioDockProps = Omit<ComponentProps<typeof StudioPromptBox>, "className" | "surface">;
 type StudioView = { kind: "home" } | { kind: "all" } | { kind: "project"; projectId: string };
@@ -93,51 +83,43 @@ type StudioView = { kind: "home" } | { kind: "all" } | { kind: "project"; projec
 const HISTORY_QUERY = { type: "video" as const, size: 40 };
 const IMAGE_LIBRARY_QUERY = { type: "image" as const, size: 40 };
 
-// PLACEHOLDER ASSETS — replace these hero/example assets when adapting the
-// scaffold. The root AGENTS.md and `bun run check:adapted` make this mandatory.
+// Bespoke CineStory template stills — see components/template-picker.tsx.
 const HERO_FALLBACKS = [
-  "/presets/skateboard-illustration.png",
-  "/presets/chess-illustration.png",
-  "/presets/skateboard-illustration.png",
+  TEMPLATE_PREVIEWS["storytime"],
+  TEMPLATE_PREVIEWS["movie-trailer"],
+  TEMPLATE_PREVIEWS["fashion-campaign"],
 ] as const;
 
-const FORMATS = [
-  { value: "ugc", title: "UGC", subtitle: "Creator-style, handheld" },
-  { value: "tiktok", title: "TikTok", subtitle: "Fast-cut vertical" },
-  { value: "reels", title: "Reels", subtitle: "Instagram vertical" },
-  { value: "commercial", title: "Commercial", subtitle: "Polished brand film" },
-];
+const LOCATION_OPTIONS = STORY_LOCATIONS.map((location) => ({
+  value: location.id,
+  title: location.title,
+}));
 
-const HOOKS = [
-  { value: "hook", title: "Hook" },
-  { value: "story", title: "Story" },
-  { value: "demo", title: "Product demo" },
-  { value: "testimonial", title: "Testimonial" },
-];
+const DURATION_SELECT_OPTIONS = DURATION_OPTIONS.map((option) => ({
+  value: option.value,
+  title: option.title,
+}));
 
-const PROMPT_MODES: PromptModeOption[] = [
-  { id: "product", label: "Product", icon: Icon3dBoxTopOutlined },
-  { id: "app", label: "App", icon: IconWorldOutlined },
-];
+const PROMPT_MODES: PromptModeOption[] = [];
 
 const PROMPT_SETTINGS: PromptSettingOption[] = [
   {
-    id: "format",
-    start: <Icon as={IconBucketOutlined} size="sm" />,
-    defaultValue: "ugc",
-    options: FORMATS,
+    id: "location",
+    start: <Icon as={IconMapPinOutlined} size="sm" />,
+    defaultValue: "match-template",
+    options: LOCATION_OPTIONS,
   },
   {
-    id: "hook",
-    start: <Icon as={IconBucketOutlined} size="sm" />,
-    defaultValue: "hook",
-    options: HOOKS,
+    id: "duration",
+    start: <Icon as={IconClockOutlined} size="sm" />,
+    defaultValue: String(DEFAULT_DURATION_SECONDS),
+    options: DURATION_SELECT_OPTIONS,
   },
 ];
 
 const PROMPT_UPLOADS: Array<Pick<PromptUploadOption, "id" | "label">> = [
-  { id: "product", label: "Product" },
-  { id: "avatar", label: "Avatar" },
+  { id: "selfie", label: "Your Photo" },
+  { id: "reference", label: "Product / Logo" },
 ];
 
 const GALLERY_TABS = [
@@ -154,28 +136,6 @@ const HERO_GLOW =
 const HERO_DOTS = "radial-gradient(rgba(255,255,255,0.2) 1px, transparent 1px)";
 const HERO_DOTS_MASK =
   "radial-gradient(55% 70% at 50% 0%, #000 0%, rgba(0,0,0,0.35) 45%, transparent 75%)";
-
-function generationTimestamp(item: GalleryItem): number {
-  if (typeof item.createdAt === "number") {
-    return item.createdAt > 10_000_000_000 ? item.createdAt : item.createdAt * 1000;
-  }
-  if (typeof item.createdAt === "string") {
-    const timestamp = Date.parse(item.createdAt);
-    return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp;
-  }
-  return Number.NEGATIVE_INFINITY;
-}
-
-function latestProjectCover(
-  project: StudioProject,
-  generations: GalleryItem[],
-): string | undefined {
-  const matching = generations.filter((item) => item.status === "ready" && item.src !== "");
-  if (matching.length === 0) return project.cover;
-  return matching.reduce((latest, item) =>
-    generationTimestamp(item) > generationTimestamp(latest) ? item : latest,
-  ).src;
-}
 
 function useRequiredFnfScopeKey(): string {
   const scopeKey = useFnfScopeKey();
@@ -202,7 +162,7 @@ function StudioSidebar({
 
   return (
     <Sidebar.Root
-      product="marketing-studio"
+      product="cinema-studio"
       className="m-2.5"
       style={
         { height: "calc(100% - 20px)", ["--q-sidebar-radius" as string]: "12px" } as CSSProperties
@@ -392,7 +352,7 @@ function BeforeState({
               color="primary"
               className="max-w-[640px] text-center uppercase"
             >
-              Turn any product into a video ad
+              Turn any idea into a cinematic short film
             </Typography>
           </div>
           <StudioPromptBox {...dock} />
@@ -458,98 +418,52 @@ function AfterPromptDock({ dock }: { dock: StudioDockProps }) {
   );
 }
 
-function GenerationsState({
-  items,
-  previewItems,
-  title,
+function StoriesState({
+  stories,
   loading,
-  error,
-  hasMore,
-  loadingMore,
-  onLoadMore,
-  manualLoadMore,
+  title,
   dock,
+  authorName,
+  authorAvatar,
 }: {
-  items: GalleryItem[];
-  previewItems: GalleryItem[];
-  title: string;
+  stories: StoryDTO[];
   loading: boolean;
-  error?: string;
-  hasMore: boolean;
-  loadingMore: boolean;
-  onLoadMore: () => Promise<unknown>;
-  manualLoadMore: boolean;
+  title: string;
   dock: StudioDockProps;
+  authorName: string;
+  authorAvatar?: string;
 }) {
   const emptyStateImages = useMemo(() => {
-    const ready = previewItems
-      .filter((item) => item.status === "ready" && item.src !== "")
+    const ready = stories
+      .filter((story) => story.status === "ready" && story.finalPosterUrl)
       .slice(0, 3)
-      .map((item) => item.src);
+      .map((story) => story.finalPosterUrl as string);
     return [
       ready[0] ?? HERO_FALLBACKS[0],
       ready[1] ?? HERO_FALLBACKS[1],
       ready[2] ?? HERO_FALLBACKS[2],
     ] as const;
-  }, [previewItems]);
-  const showBlockingError = error != null && items.length === 0 && !import.meta.env.DEV;
-  const showInlineError = error != null && !import.meta.env.DEV;
+  }, [stories]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex min-h-0 flex-1 flex-col px-4 pb-40 pt-4">
-        {loading ? (
-          <div className="flex h-full items-center justify-center">
-            <Loader size="md" color="neutral" aria-label="Loading generation history" />
-          </div>
-        ) : showBlockingError ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-            <Typography as="p" variant="body-sm-regular" color="danger">
-              {error}
-            </Typography>
-            <Button variant="tertiary" size="sm" onClick={() => void onLoadMore()}>
-              Retry
-            </Button>
-          </div>
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col gap-3">
-            {showInlineError ? (
-              <div className="flex shrink-0 items-center justify-between gap-3 rounded-q-300 bg-q-transparent-light-05 px-3 py-2">
-                <Typography as="p" variant="caption-sm-regular" color="danger">
-                  {error}
-                </Typography>
-                <Button variant="tertiary" size="xs" onClick={() => void onLoadMore()}>
-                  Retry
-                </Button>
-              </div>
-            ) : null}
-            <UserGenerations
-              items={items}
-              title={title}
-              emptyState={{
-                images: emptyStateImages,
-                title:
-                  title === "All Generations" ? "No generations yet" : `No generations in ${title}`,
-                description: "Describe an idea below, then generate the first result.",
-              }}
-              hasMore={hasMore && !manualLoadMore}
-              loadingMore={loadingMore}
-              onLoadMore={onLoadMore}
-            />
-            {manualLoadMore && hasMore ? (
-              <div className="flex shrink-0 justify-center">
-                <Button
-                  variant="tertiary"
-                  size="sm"
-                  disabled={loadingMore}
-                  onClick={() => void onLoadMore()}
-                >
-                  {loadingMore ? "Loading…" : "Load older"}
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        )}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-40 pt-4">
+        <Typography as="h2" variant="title-sm-semi-bold" color="primary">
+          {title}
+        </Typography>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <StoryFeedGrid
+            stories={stories}
+            loading={loading}
+            authorName={authorName}
+            authorAvatar={authorAvatar}
+            emptyState={{
+              images: emptyStateImages,
+              title: title === "All Stories" ? "No stories yet" : `No stories in ${title}`,
+              description: "Describe an idea below and CineStory will direct, cast and cut the film.",
+            }}
+          />
+        </div>
       </div>
       <AfterPromptDock dock={dock} />
     </div>
@@ -557,32 +471,30 @@ function GenerationsState({
 }
 
 export function StudioTemplate() {
-  const jobClient = useFnfJobClient<typeof STUDIO_JOBS>();
+  const jobClient = useFnfJobClient();
   const mediaClient = useFnfMediaClient();
   const scopeKey = useRequiredFnfScopeKey();
   const queryClient = useQueryClient();
-  const run = useGenerationRun(jobClient, { scopeKey });
   const [view, setView] = useState<StudioView>({ kind: "home" });
   const [prompt, setPrompt] = useState("");
-  const [mode, setMode] = useState("product");
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem>(TEMPLATES[0]);
   const [settingValues, setSettingValues] = useState<Record<string, string>>({
-    format: "ugc",
-    hook: "hook",
+    location: "match-template",
+    duration: String(DEFAULT_DURATION_SECONDS),
   });
   const [references, setReferences] = useState<Record<string, AssetSelection | undefined>>({});
   const [localUploads, setLocalUploads] = useState<AssetLibraryItem[]>([]);
-  const [linkOverrides, setLinkOverrides] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pendingSignInUrl, setPendingSignInUrl] = useState<string | null>(null);
-  const prependedIds = useRef(new Set<string>());
-  const linkingIds = useRef(new Set<string>());
-  const runProjectId = useRef<string | undefined>(undefined);
-  const navigateToAllOnSubmitRef = useRef(false);
   const projectsQueryKey = useMemo(
     () => ["studio", "scope", scopeKey, "projects"] as const,
     [scopeKey],
   );
 
+  // Raw fnf image/video generations — kept ONLY to back the asset-library
+  // picker (past uploads + generated stills the story pipeline produced).
+  // The user-facing product surface is Stories, driven by useStoriesFeed below.
   const history = useInfiniteQuery({
     ...jobsFeedQueryOptions(jobClient, HISTORY_QUERY, { scopeKey }),
     getNextPageParam: getNextStudioCursor,
@@ -593,11 +505,6 @@ export function StudioTemplate() {
     getNextPageParam: getNextStudioCursor,
     select: flattenFeedPages,
   });
-  const liveGenerations = useMemo(
-    () => [...(history.data ?? []), ...(imageHistory.data ?? [])],
-    [history.data, imageHistory.data],
-  );
-  useLiveFeedGenerations(jobClient, liveGenerations, { scopeKey });
   const persistedUploads = useInfiniteQuery({
     queryKey: ["fnf", "scope", scopeKey, "media", "image"],
     queryFn: ({ pageParam }) =>
@@ -618,40 +525,22 @@ export function StudioTemplate() {
     refetchOnWindowFocus: false,
   });
 
-  const generations = useMemo(() => {
-    const runIds = new Set(run.generations.map((generation) => generation.id));
-    return [
-      ...run.generations,
-      ...(history.data ?? []).filter((generation) => !runIds.has(generation.id)),
-    ];
-  }, [history.data, run.generations]);
-  const generationProjects = useMemo(() => {
-    const result: Record<string, string> = {};
-    for (const link of projectData.data?.links ?? []) result[link.generationId] = link.projectId;
-    return { ...result, ...linkOverrides };
-  }, [linkOverrides, projectData.data?.links]);
   const galleryItems = useMemo(
     () =>
-      generations
-        .map((generation) => generationToGalleryItem(generation, generationProjects[generation.id]))
+      (history.data ?? [])
+        .map((generation) => generationToGalleryItem(generation))
         .filter((item): item is GalleryItem => item != null),
-    [generationProjects, generations],
+    [history.data],
   );
-  const projectItems = useMemo(() => indexProjectItems(galleryItems), [galleryItems]);
   const projects = useMemo<StudioProject[]>(
     () =>
-      (projectData.data?.projects ?? []).map((project) => {
-        const items = projectItems.get(project.id) ?? [];
-        const base: StudioProject = {
-          id: project.id,
-          name: project.name,
-          generationCount: project.generationCount,
-          updatedAt: project.updatedAt,
-        };
-        const cover = latestProjectCover(base, items);
-        return cover ? { ...base, cover } : base;
-      }),
-    [projectData.data?.projects, projectItems],
+      (projectData.data?.projects ?? []).map((project) => ({
+        id: project.id,
+        name: project.name,
+        generationCount: project.generationCount,
+        updatedAt: project.updatedAt,
+      })),
+    [projectData.data?.projects],
   );
   const selectedProject = useMemo(
     () =>
@@ -660,17 +549,13 @@ export function StudioTemplate() {
         : undefined,
     [projects, view],
   );
-  const visibleItems = useMemo(
-    () => (view.kind === "project" ? (projectItems.get(view.projectId) ?? []) : galleryItems),
-    [galleryItems, projectItems, view],
-  );
   const libraryGenerations = useMemo(() => {
-    const generationIds = new Set(generations.map((generation) => generation.id));
+    const generationIds = new Set((history.data ?? []).map((generation) => generation.id));
     return [
-      ...generations,
+      ...(history.data ?? []),
       ...(imageHistory.data ?? []).filter((generation) => !generationIds.has(generation.id)),
     ];
-  }, [generations, imageHistory.data]);
+  }, [history.data, imageHistory.data]);
 
   const libraryItems = useMemo(() => {
     const localIds = new Set(localUploads.map((item) => item.ref?.id));
@@ -741,106 +626,11 @@ export function StudioTemplate() {
     ],
   );
 
-  const input = useMemo<StudioGenerationInput>(() => {
-    const format = settingValues.format ?? "ugc";
-    const hook = settingValues.hook ?? "hook";
-    const selections = Object.values(references).flatMap((selection) =>
-      selection?.ref ? [{ kind: selection.kind, ref: selection.ref }] : [],
-    );
-    const images = selections.filter(({ kind }) => kind !== "video").map(({ ref }) => ref);
-    const videos = selections.filter(({ kind }) => kind === "video").map(({ ref }) => ref);
-    const formatLabel = FORMATS.find((candidate) => candidate.value === format)?.title ?? format;
-    const hookLabel = HOOKS.find((candidate) => candidate.value === hook)?.title ?? hook;
-    const instruction = [
-      `Create a ${formatLabel} ${mode} video with a ${hookLabel} structure.`,
-      prompt.trim(),
-    ]
-      .filter(Boolean)
-      .join("\n\n");
+  const storiesFeed = useStoriesFeed(scopeKey, view.kind === "project" ? view.projectId : undefined);
+  const stories = useMemo(() => storiesFeed.data ?? [], [storiesFeed.data]);
 
-    return {
-      model: "seedance_2_0",
-      prompt: { instruction },
-      ...(images.length > 0 || videos.length > 0
-        ? {
-            media: {
-              ...(images.length > 0 ? { image: images } : {}),
-              ...(videos.length > 0 ? { video: videos } : {}),
-            },
-          }
-        : {}),
-      settings: {
-        duration: 8,
-        aspectRatio: format === "commercial" ? "16:9" : "9:16",
-        resolution: "720p",
-        mode: "std",
-        batchSize: 1,
-        generateAudio: true,
-        bitrateMode: "standard",
-      },
-    };
-  }, [mode, prompt, references, settingValues.format, settingValues.hook]);
-
-  const hasReference = Object.values(references).some((selection) => selection?.ref != null);
-  const canGenerate = prompt.trim().length > 0 || hasReference;
-  const runFailure = useMemo(() => {
-    for (const generation of run.generations) {
-      const media = selectGenerationMedia(generation);
-      if (media.kind !== "empty" || !media.terminal) continue;
-      return (
-        getGenerationFailureLabel(generation) ??
-        (media.reason === "preview_unavailable"
-          ? "The generation completed without previewable media."
-          : getGenerationStatusLabel(generation))
-      );
-    }
-    return undefined;
-  }, [run.generations]);
-  const cost = useQuery({
-    ...costQueryOptions(jobClient, input, { enabled: canGenerate, scopeKey }),
-    refetchOnWindowFocus: false,
-  });
-
-  useEffect(() => {
-    const fresh =
-      history.data == null
-        ? []
-        : run.generations.filter((generation) => !prependedIds.current.has(generation.id));
-    if (fresh.length > 0) {
-      for (const generation of fresh) prependedIds.current.add(generation.id);
-      prependGenerations(queryClient, HISTORY_QUERY, fresh, { scopeKey });
-    }
-
-    const projectId = runProjectId.current;
-    if (!projectId) return;
-    const unlinked = run.generations.filter((generation) => !linkingIds.current.has(generation.id));
-    if (unlinked.length === 0) return;
-    const ids = unlinked.map((generation) => generation.id);
-    for (const id of ids) linkingIds.current.add(id);
-    setLinkOverrides((current) => ({
-      ...current,
-      ...Object.fromEntries(ids.map((id) => [id, projectId])),
-    }));
-    void linkProjectWithOneRetry(() =>
-      linkStudioGenerationsFn({ data: { projectId, generationIds: ids } }),
-    )
-      .then(() => queryClient.invalidateQueries({ queryKey: projectsQueryKey }))
-      .catch((error: unknown) => {
-        for (const id of ids) linkingIds.current.delete(id);
-        setLinkOverrides((current) => {
-          const next = { ...current };
-          for (const id of ids) delete next[id];
-          return next;
-        });
-        setSubmitError(error instanceof Error ? error.message : "Could not save the project link.");
-      });
-  }, [history.data, projectsQueryKey, queryClient, run.generations, scopeKey]);
-
-  useEffect(() => {
-    if (!navigateToAllOnSubmitRef.current || run.generations.length === 0) return;
-    navigateToAllOnSubmitRef.current = false;
-    setView({ kind: "all" });
-  }, [run.generations.length]);
+  const hasSelfie = references.selfie?.ref != null;
+  const canGenerate = prompt.trim().length > 0 && hasSelfie;
 
   const handleUpload = async (file: File): Promise<AssetSelection> => {
     const uploaded = await uploadAsset(file);
@@ -872,8 +662,8 @@ export function StudioTemplate() {
   };
 
   const handleUseTemplate = (template: TemplateItem) => {
-    setPrompt(`${template.title} — ${template.subtitle}`);
-    setSettingValues((current) => ({ ...current, format: template.category }));
+    setSelectedTemplate(template);
+    if (!prompt.trim()) setPrompt(`${template.title} — ${template.subtitle}`);
   };
 
   const allowPersonalNavigation = useCallback(() => {
@@ -896,17 +686,38 @@ export function StudioTemplate() {
     [allowPersonalNavigation],
   );
 
-  const handleGenerate = () => {
-    if (!canGenerate || run.status === "submitting") return;
+  const handleGenerate = async () => {
+    if (!canGenerate || submitting) return;
     if (!allowPersonalNavigation()) return;
     setSubmitError(null);
-    runProjectId.current = view.kind === "project" ? view.projectId : undefined;
-    // The host approval iframe owns confirmation. Do not navigate away from
-    // Home until the approved submit has actually created a generation.
-    navigateToAllOnSubmitRef.current = runProjectId.current == null;
-    void run.start(input).then((generations) => {
-      if (generations.length === 0) navigateToAllOnSubmitRef.current = false;
-    });
+    setSubmitting(true);
+    const targetView = view.kind === "project" ? view : { kind: "all" as const };
+    try {
+      await createStoryFn({
+        data: {
+          idea: prompt.trim(),
+          templateId: selectedTemplate.id,
+          locationId: settingValues.location ?? "match-template",
+          durationSec: Number(settingValues.duration ?? DEFAULT_DURATION_SECONDS),
+          ...(view.kind === "project" ? { projectId: view.projectId } : {}),
+          ...(references.selfie?.ref
+            ? { selfieRef: { ref: references.selfie.ref, src: references.selfie.src } }
+            : {}),
+          ...(references.reference?.ref
+            ? { referenceRef: { ref: references.reference.ref, src: references.reference.src } }
+            : {}),
+        },
+      });
+      setPrompt("");
+      await queryClient.invalidateQueries({ queryKey: ["cinestory", "stories", scopeKey] });
+      setView(targetView);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "CineStory could not start this story.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const promptUploads = PROMPT_UPLOADS.map((upload) => ({
@@ -915,8 +726,8 @@ export function StudioTemplate() {
   }));
   const dock: StudioDockProps = {
     modes: PROMPT_MODES,
-    mode,
-    onModeChange: setMode,
+    mode: "story",
+    onModeChange: () => {},
     settings: PROMPT_SETTINGS,
     settingValues,
     onSettingChange: (id, value) => setSettingValues((current) => ({ ...current, [id]: value })),
@@ -929,7 +740,7 @@ export function StudioTemplate() {
     onAddMedia: (selection) => {
       const target = PROMPT_UPLOADS.find((upload) => references[upload.id] == null)?.id;
       if (target == null) {
-        setSubmitError("Remove a Product or Avatar reference before adding another.");
+        setSubmitError("Remove a photo or reference before adding another.");
         return;
       }
       setSubmitError(null);
@@ -950,11 +761,14 @@ export function StudioTemplate() {
     onSelectTemplate: handleUseTemplate,
     prompt,
     onPromptChange: setPrompt,
-    cost: cost.data?.credits ?? "—",
-    onGenerate: handleGenerate,
-    submitting: run.status === "submitting",
+    onGenerate: () => void handleGenerate(),
+    submitting,
     generateDisabled: !canGenerate,
-    error: submitError ?? run.error?.message ?? runFailure ?? run.warning ?? undefined,
+    error:
+      submitError ??
+      (prompt.trim().length > 0 && !hasSelfie
+        ? "Add your photo so CineStory can cast you in the story."
+        : undefined),
   };
 
   return (
@@ -992,17 +806,12 @@ export function StudioTemplate() {
             }
           />
         ) : (
-          <GenerationsState
-            items={visibleItems}
-            previewItems={galleryItems}
-            title={selectedProject?.name ?? "All Generations"}
-            loading={history.isPending && visibleItems.length === 0}
-            error={history.error instanceof Error ? history.error.message : undefined}
-            hasMore={history.error == null && history.hasNextPage === true}
-            loadingMore={history.isFetchingNextPage}
-            onLoadMore={loadMoreLibraryVideos}
-            manualLoadMore={view.kind === "project"}
+          <StoriesState
+            stories={stories}
+            loading={storiesFeed.isPending && stories.length === 0}
+            title={selectedProject?.name ?? "All Stories"}
             dock={dock}
+            authorName="You"
           />
         )}
       </main>

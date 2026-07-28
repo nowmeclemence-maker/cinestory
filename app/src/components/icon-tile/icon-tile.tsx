@@ -79,10 +79,12 @@ export function IconTile({ as, gradient, className, style, ...props }: IconTileP
       <Glyph
         weight={isGradient ? "fill" : "regular"}
         aria-hidden
-        className={cx(
-          icon({ size: "sm", color: isGradient ? undefined : "secondary" }),
-          "q-icon-tile-glyph",
-        )}
+        {...({
+          className: cx(
+            icon({ size: "sm", color: isGradient ? undefined : "secondary" }),
+            "q-icon-tile-glyph",
+          ),
+        } as ComponentPropsWithRef<typeof Glyph>)}
       />
     </span>
   );

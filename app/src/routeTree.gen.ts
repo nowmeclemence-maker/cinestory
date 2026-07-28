@@ -13,7 +13,10 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiUserRouteImport } from './routes/api/user'
+import { Route as ApiStoryMediaSplatRouteImport } from './routes/api/story-media/$'
 import { Route as ApiMediaUploadRouteImport } from './routes/api/media/upload'
+import { Route as ApiStoriesIdFinalizeRouteImport } from './routes/api/stories/$id/finalize'
+import { Route as ApiStoriesIdAssembleRouteImport } from './routes/api/stories/$id/assemble'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -35,9 +38,24 @@ const ApiUserRoute = ApiUserRouteImport.update({
   path: '/api/user',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiStoryMediaSplatRoute = ApiStoryMediaSplatRouteImport.update({
+  id: '/api/story-media/$',
+  path: '/api/story-media/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMediaUploadRoute = ApiMediaUploadRouteImport.update({
   id: '/api/media/upload',
   path: '/api/media/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiStoriesIdFinalizeRoute = ApiStoriesIdFinalizeRouteImport.update({
+  id: '/api/stories/$id/finalize',
+  path: '/api/stories/$id/finalize',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiStoriesIdAssembleRoute = ApiStoriesIdAssembleRouteImport.update({
+  id: '/api/stories/$id/assemble',
+  path: '/api/stories/$id/assemble',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -47,6 +65,9 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/user': typeof ApiUserRoute
   '/api/media/upload': typeof ApiMediaUploadRoute
+  '/api/story-media/$': typeof ApiStoryMediaSplatRoute
+  '/api/stories/$id/assemble': typeof ApiStoriesIdAssembleRoute
+  '/api/stories/$id/finalize': typeof ApiStoriesIdFinalizeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +75,9 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/user': typeof ApiUserRoute
   '/api/media/upload': typeof ApiMediaUploadRoute
+  '/api/story-media/$': typeof ApiStoryMediaSplatRoute
+  '/api/stories/$id/assemble': typeof ApiStoriesIdAssembleRoute
+  '/api/stories/$id/finalize': typeof ApiStoriesIdFinalizeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +86,31 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/user': typeof ApiUserRoute
   '/api/media/upload': typeof ApiMediaUploadRoute
+  '/api/story-media/$': typeof ApiStoryMediaSplatRoute
+  '/api/stories/$id/assemble': typeof ApiStoriesIdAssembleRoute
+  '/api/stories/$id/finalize': typeof ApiStoriesIdFinalizeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/robots.txt' | '/sitemap.xml' | '/api/user' | '/api/media/upload'
+    | '/'
+    | '/robots.txt'
+    | '/sitemap.xml'
+    | '/api/user'
+    | '/api/media/upload'
+    | '/api/story-media/$'
+    | '/api/stories/$id/assemble'
+    | '/api/stories/$id/finalize'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/robots.txt' | '/sitemap.xml' | '/api/user' | '/api/media/upload'
+  to:
+    | '/'
+    | '/robots.txt'
+    | '/sitemap.xml'
+    | '/api/user'
+    | '/api/media/upload'
+    | '/api/story-media/$'
+    | '/api/stories/$id/assemble'
+    | '/api/stories/$id/finalize'
   id:
     | '__root__'
     | '/'
@@ -76,6 +118,9 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/user'
     | '/api/media/upload'
+    | '/api/story-media/$'
+    | '/api/stories/$id/assemble'
+    | '/api/stories/$id/finalize'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -84,6 +129,9 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiUserRoute: typeof ApiUserRoute
   ApiMediaUploadRoute: typeof ApiMediaUploadRoute
+  ApiStoryMediaSplatRoute: typeof ApiStoryMediaSplatRoute
+  ApiStoriesIdAssembleRoute: typeof ApiStoriesIdAssembleRoute
+  ApiStoriesIdFinalizeRoute: typeof ApiStoriesIdFinalizeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -116,11 +164,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiUserRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/story-media/$': {
+      id: '/api/story-media/$'
+      path: '/api/story-media/$'
+      fullPath: '/api/story-media/$'
+      preLoaderRoute: typeof ApiStoryMediaSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/media/upload': {
       id: '/api/media/upload'
       path: '/api/media/upload'
       fullPath: '/api/media/upload'
       preLoaderRoute: typeof ApiMediaUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/stories/$id/finalize': {
+      id: '/api/stories/$id/finalize'
+      path: '/api/stories/$id/finalize'
+      fullPath: '/api/stories/$id/finalize'
+      preLoaderRoute: typeof ApiStoriesIdFinalizeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/stories/$id/assemble': {
+      id: '/api/stories/$id/assemble'
+      path: '/api/stories/$id/assemble'
+      fullPath: '/api/stories/$id/assemble'
+      preLoaderRoute: typeof ApiStoriesIdAssembleRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -132,6 +201,9 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiUserRoute: ApiUserRoute,
   ApiMediaUploadRoute: ApiMediaUploadRoute,
+  ApiStoryMediaSplatRoute: ApiStoryMediaSplatRoute,
+  ApiStoriesIdAssembleRoute: ApiStoriesIdAssembleRoute,
+  ApiStoriesIdFinalizeRoute: ApiStoriesIdFinalizeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

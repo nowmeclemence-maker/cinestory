@@ -1,55 +1,26 @@
 import type { KeyboardEvent, ReactElement, ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { User as IconCryptopunkOutlined } from "lucide-react";
-import { DollarSign as IconDollarOutlined } from "lucide-react";
-import { WandSparkles as IconImagineAiFilled } from "lucide-react";
-import { BatteryFull as IconBatteryFullFilled } from "lucide-react";
-import { Calendar as IconDateYearlyFilled } from "lucide-react";
-import { House as IconHomeRoundDoorFilled } from "lucide-react";
-import { Music as IconTiktokOutlined } from "lucide-react";
-import { Video as IconVideoOutlined } from "lucide-react";
+import { Clapperboard as IconStoryOutlined } from "lucide-react";
+import { Megaphone as IconAdOutlined } from "lucide-react";
+import { Drama as IconDramaOutlined } from "lucide-react";
+import { Rocket as IconRealOutlined } from "lucide-react";
 import { Button } from "@higgsfield/quanta/button";
 import { Icon } from "@higgsfield/quanta/icon";
 import { Media } from "@higgsfield/quanta/media";
 import { Modal } from "@higgsfield/quanta/modal";
 import { Tabs } from "@higgsfield/quanta/tabs";
 import { Typography } from "@higgsfield/quanta/typography";
+import { STORY_TEMPLATES } from "@/lib/story-templates";
 
 /**
- * TemplatePickerModal — the full-screen "template settings" picker that opens
- * from the Studio prompt box (Figma Marketing-Studio: the settings/Templates
- * control on node 7259:51362 opens this). A glass `Modal` (spirit of the
- * asset-library modal) whose body is a gallery of selectable IMAGE / VIDEO
- * template tiles, filtered by category (All / TikTok / UGC / Commercial) and by
- * media type (All / Image / Video).
- *
- * ── Figma note ────────────────────────────────────────────────────────────────
- * The referenced node (7259:51362) resolves to the Studio *prompt box* itself;
- * Figma exposes no standalone "template modal" node. The tile design is taken
- * verbatim from the Studio gallery cards (node 7137:108927 — brand header,
- * rounded triptych, gradient badge + title/subtitle + lime "Try"), and lifted
- * into a Quanta glass Modal following the asset-library composition. The exported
- * `TemplateCard` + `TEMPLATES` are exported so an in-page
- * gallery and the modal render identical tiles.
+ * TemplatePickerModal — CineStory's "choose a storytelling template" picker,
+ * opened from the Studio prompt box's sliders pill. A glass `Modal` gallery of
+ * selectable template tiles, filtered by story group (Story / Ad / Drama / Real).
  */
 
-// PLACEHOLDER ASSETS — template demo art (see /presets/*.png). When adapting
-// this template into a real app, REPLACE media that represents the product
-// (hero/example outputs, covers, before/after samples, feed items) with
-// bespoke on-brand assets generated via the Higgsfield generation tools.
-// Pure style-picker label thumbnails may keep simple placeholder art when
-// real output depends on the user's own upload. Grep "PLACEHOLDER ASSETS"
-// to find every site.
-const THUMBS = [
-  "/presets/chess-illustration.png",
-  "/presets/skateboard-illustration.png",
-  "/presets/chess-illustration.png",
-  "/presets/skateboard-illustration.png",
-] as const;
-
-type LeadGlyph = typeof IconBatteryFullFilled;
-export type TemplateCategory = "tiktok" | "ugc" | "commercial";
-export type TemplateKind = "image" | "video";
+type LeadGlyph = typeof IconStoryOutlined;
+export type TemplateCategory = "story" | "ad" | "drama" | "real";
+export type TemplateKind = "video";
 
 export interface TemplateItem {
   id: string;
@@ -61,63 +32,56 @@ export interface TemplateItem {
   icon: LeadGlyph;
 }
 
-// PLACEHOLDER ASSETS — demo data; replace when adapting (see note above).
-export const TEMPLATES: TemplateItem[] = [
-  {
-    id: "ugc-gadget",
-    title: "UGC Gadget save me",
-    subtitle: "Turn long videos into short clips",
-    category: "ugc",
-    kind: "video",
-    images: [THUMBS[0], THUMBS[1], THUMBS[2]],
-    icon: IconBatteryFullFilled,
-  },
-  {
-    id: "giant-figure",
-    title: "Giant figure",
-    subtitle: "Product hero, larger than life",
-    category: "tiktok",
-    kind: "image",
-    images: [THUMBS[1], THUMBS[3], THUMBS[0]],
-    icon: IconImagineAiFilled,
-  },
-  {
-    id: "classic-modern",
-    title: "Classic meets modern",
-    subtitle: "Editorial style transfer",
-    category: "commercial",
-    kind: "image",
-    images: [THUMBS[2], THUMBS[0], THUMBS[1]],
-    icon: IconDateYearlyFilled,
-  },
-  {
-    id: "couple-home",
-    title: "Couple sharing home",
-    subtitle: "Lifestyle story in 3 shots",
-    category: "ugc",
-    kind: "video",
-    images: [THUMBS[3], THUMBS[2], THUMBS[0]],
-    icon: IconHomeRoundDoorFilled,
-  },
-  {
-    id: "unbox-hype",
-    title: "Unboxing hype",
-    subtitle: "Fast-cut reveal for TikTok",
-    category: "tiktok",
-    kind: "video",
-    images: [THUMBS[0], THUMBS[2], THUMBS[3]],
-    icon: IconImagineAiFilled,
-  },
-  {
-    id: "studio-lookbook",
-    title: "Studio lookbook",
-    subtitle: "Clean commercial catalogue",
-    category: "commercial",
-    kind: "image",
-    images: [THUMBS[1], THUMBS[0], THUMBS[3]],
-    icon: IconDateYearlyFilled,
-  },
-];
+const GROUP_ICON: Record<TemplateCategory, LeadGlyph> = {
+  story: IconStoryOutlined,
+  ad: IconAdOutlined,
+  drama: IconDramaOutlined,
+  real: IconRealOutlined,
+};
+
+// Bespoke, template-specific stills generated via the Higgsfield tools (one
+// hero frame per template) — see TEMPLATE_PREVIEWS below for the mapping.
+const FALLBACK_PREVIEW = "/presets/skateboard-illustration.png";
+
+export const TEMPLATE_PREVIEWS: Record<string, string> = {
+  storytime:
+    "https://d8j0ntlcm91z4.cloudfront.net/user_31M19Hft5zAlaZiYdbSWpgw8fIc/hf_20260728_190455_6799be86-c852-45dc-8bb9-94be4e019c99.png",
+  "product-commercial":
+    "https://d8j0ntlcm91z4.cloudfront.net/user_31M19Hft5zAlaZiYdbSWpgw8fIc/hf_20260728_190455_5f7dbd9f-a1b3-4217-82f2-dd882d7a33cc.png",
+  "luxury-lifestyle":
+    "https://d8j0ntlcm91z4.cloudfront.net/user_31M19Hft5zAlaZiYdbSWpgw8fIc/hf_20260728_190455_45ba78e2-35f9-4cf3-8d46-22596afa131a.png",
+  "micro-drama":
+    "https://d8j0ntlcm91z4.cloudfront.net/user_31M19Hft5zAlaZiYdbSWpgw8fIc/hf_20260728_190455_a1fb3481-cf67-430f-a3f1-845eab461ffa.png",
+  "future-me":
+    "https://d8j0ntlcm91z4.cloudfront.net/user_31M19Hft5zAlaZiYdbSWpgw8fIc/hf_20260728_190335_b9837a71-fddc-4c44-b528-0f7e900b3c2a.png",
+  "before-vs-after":
+    "https://d8j0ntlcm91z4.cloudfront.net/user_31M19Hft5zAlaZiYdbSWpgw8fIc/hf_20260728_190335_121619dd-74fc-4a3c-8bf4-2a3831b2e456.png",
+  "ugc-ad":
+    "https://d8j0ntlcm91z4.cloudfront.net/user_31M19Hft5zAlaZiYdbSWpgw8fIc/hf_20260728_190624_ce1ba2f1-5a21-4286-ae7a-0057b7d097e1.png",
+  motivational:
+    "https://d8j0ntlcm91z4.cloudfront.net/user_31M19Hft5zAlaZiYdbSWpgw8fIc/hf_20260728_190623_92b4bfc7-8038-42eb-a02d-3f1c5ef12786.png",
+  "life-lesson":
+    "https://d8j0ntlcm91z4.cloudfront.net/user_31M19Hft5zAlaZiYdbSWpgw8fIc/hf_20260728_190623_b1d11906-5693-4934-857f-10eb38521183.png",
+  "entrepreneur-journey":
+    "https://d8j0ntlcm91z4.cloudfront.net/user_31M19Hft5zAlaZiYdbSWpgw8fIc/hf_20260728_190623_2c5226c5-f88b-4858-a61c-710c34d71ad1.png",
+  "movie-trailer":
+    "https://d8j0ntlcm91z4.cloudfront.net/user_31M19Hft5zAlaZiYdbSWpgw8fIc/hf_20260728_190720_14fd2dfd-efad-4ba3-9a6c-c8d3f6b5c748.png",
+  "fashion-campaign":
+    "https://d8j0ntlcm91z4.cloudfront.net/user_31M19Hft5zAlaZiYdbSWpgw8fIc/hf_20260728_190720_687c600a-599c-4138-9240-4075f28881a8.png",
+};
+
+export const TEMPLATES: TemplateItem[] = STORY_TEMPLATES.map((template) => {
+  const src = TEMPLATE_PREVIEWS[template.id] ?? FALLBACK_PREVIEW;
+  return {
+    id: template.id,
+    title: template.title,
+    subtitle: template.subtitle,
+    category: template.group,
+    kind: "video" as const,
+    images: [src, src, src] as [string, string, string],
+    icon: GROUP_ICON[template.group],
+  };
+});
 
 /** Stable random-looking gradient per template — avoids SSR hydration differences. */
 function gradientFromSeed(seed: string): string {
@@ -128,7 +92,6 @@ function gradientFromSeed(seed: string): string {
   return `linear-gradient(135deg, hsl(${startHue} 62% 52%) 0%, hsl(${endHue} 76% 27%) 100%)`;
 }
 
-/** Figma 22375:39892 gradient icon tile with a deterministic random palette. */
 function GradientBadge({ as, seed }: { as: LeadGlyph; seed: string }) {
   return (
     <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border-[1.333px] border-[rgba(197,197,197,0.24)] p-1.5 text-white shadow-[0_5.333px_2.667px_rgba(0,0,0,0.08),inset_0_2.667px_5.333px_rgba(255,255,255,0.24)]">
@@ -156,29 +119,15 @@ const TRIPTYCH_CORNERS = [
   "rounded-tr-q-500 rounded-br-q-500 rounded-tl-q-150 rounded-bl-q-150",
 ] as const;
 
-/**
- * Preview layout of a template tile:
- *   • `single`   — ONE full-width shot (the base tile). Default.
- *   • `triptych` — the 3-shot rounded triptych variation.
- */
 export type TemplateCardVariant = "single" | "triptych";
 
 export interface TemplateCardProps {
   template: TemplateItem;
-  /** Preview layout. `single` (one full-width image) is the base; `triptych` is the 3-shot variation. */
   variant?: TemplateCardVariant;
-  /** Fired by the "Try" action (wire to seed the prompt box / start a generation). */
   onTry: (template: TemplateItem) => void;
-  /** Swap the "Try" label (e.g. "Use"). */
   tryLabel?: ReactNode;
 }
 
-/**
- * A single marketing template tile — Figma Marketing-Studio gallery card
- * (7137:108927): co-brand header, a rounded preview (base = one full-width shot;
- * the `triptych` variant shows 3 shots), and a footer with a gradient category
- * badge, the title/subtitle, and the lime "Try" CTA.
- */
 export function TemplateCard({
   template,
   variant = "single",
@@ -253,38 +202,25 @@ export function TemplateCard({
 
 const CATEGORY_TABS = [
   { value: "all", label: "All" },
-  { value: "tiktok", label: "TikTok", start: <Icon size="sm" as={IconTiktokOutlined} /> },
-  { value: "ugc", label: "UGC", start: <Icon size="sm" as={IconCryptopunkOutlined} /> },
-  { value: "commercial", label: "Commercial", start: <Icon size="sm" as={IconDollarOutlined} /> },
-];
-
-const TYPE_TABS = [
-  { value: "all", label: "All" },
-  { value: "image", label: "Image", start: <Icon size="sm" as={IconImagineAiFilled} /> },
-  { value: "video", label: "Video", start: <Icon size="sm" as={IconVideoOutlined} /> },
+  { value: "story", label: "Story", start: <Icon size="sm" as={IconStoryOutlined} /> },
+  { value: "ad", label: "Ad & Brand", start: <Icon size="sm" as={IconAdOutlined} /> },
+  { value: "drama", label: "Drama", start: <Icon size="sm" as={IconDramaOutlined} /> },
+  { value: "real", label: "Real Life", start: <Icon size="sm" as={IconRealOutlined} /> },
 ];
 
 export interface TemplatePickerModalProps {
-  /** The trigger element (e.g. a PromptBox.Pill). Rendered as the Modal trigger. */
   trigger: ReactElement;
-  /** Fired when a template's "Try" is clicked (wire to seed the prompt box). */
   onSelect: (template: TemplateItem) => void;
-  /** Start opened (uncontrolled) — handy for previews. */
   defaultOpen?: boolean;
 }
 
 export function TemplatePickerModal({ trigger, onSelect, defaultOpen }: TemplatePickerModalProps) {
   const [open, setOpen] = useState(defaultOpen ?? false);
   const [category, setCategory] = useState("all");
-  const [kind, setKind] = useState("all");
 
   const visible = useMemo(
-    () =>
-      TEMPLATES.filter(
-        (t) =>
-          (category === "all" || t.category === category) && (kind === "all" || t.kind === kind),
-      ),
-    [category, kind],
+    () => TEMPLATES.filter((t) => category === "all" || t.category === category),
+    [category],
   );
 
   return (
@@ -298,13 +234,7 @@ export function TemplatePickerModal({ trigger, onSelect, defaultOpen }: Template
           <Modal.CloseButton />
         </Modal.Header>
 
-        <div className="flex items-center gap-4 px-1 pb-3">
-          <Tabs.Root variant="segmented" value={kind} onValueChange={setKind}>
-            <Tabs.List items={TYPE_TABS} />
-          </Tabs.Root>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto pt-3">
           <div className="grid grid-cols-2 gap-5 p-1">
             {visible.map((template) => (
               <TemplateCard
