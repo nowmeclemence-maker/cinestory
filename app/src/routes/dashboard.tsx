@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Typography } from "@higgsfield/quanta/typography";
-import { Card, CardHeader, CardContent } from "@higgsfield/quanta/card";
+import { Card } from "@higgsfield/quanta/card";
 import { Button } from "@higgsfield/quanta/button";
 import { Icon } from "@higgsfield/quanta/icon";
 import { Loader } from "@higgsfield/quanta/loader";
@@ -83,14 +83,14 @@ function DashboardPage() {
                       <Film className="size-8 text-q-text-tertiary" />
                     </div>
                   )}
-                  <CardContent className="p-3">
+                  <div className="p-3">
                     <Typography as="h3" variant="label-md-medium" color="primary" truncate>
                       {story.title ?? story.idea}
                     </Typography>
                     <Typography as="p" variant="caption-sm-regular" color="secondary" truncate>
                       {story.templateTitle} · {story.status}
                     </Typography>
-                  </CardContent>
+                  </div>
                 </Card>
               ))}
             </div>

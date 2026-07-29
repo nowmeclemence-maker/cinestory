@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Typography } from "@higgsfield/quanta/typography";
 import { Button } from "@higgsfield/quanta/button";
 import { Icon } from "@higgsfield/quanta/icon";
-import { Download, Film, Monitor, Smartphone, Youtube } from "lucide-react";
+import { Download, Film, Monitor, Smartphone, Video } from "lucide-react";
 import { AppShell } from "@/layouts/app-shell";
 
 export const Route = createFileRoute("/exports")({
@@ -14,7 +14,7 @@ function ExportsPage() {
     { label: "MP4", icon: Film, desc: "Standard HD video", res: "1080p" },
     { label: "TikTok", icon: Smartphone, desc: "Vertical 9:16", res: "1080p" },
     { label: "Instagram Reels", icon: Smartphone, desc: "Vertical 9:16", res: "1080p" },
-    { label: "YouTube Shorts", icon: Youtube, desc: "Vertical 9:16", res: "1080p" },
+    { label: "YouTube Shorts", icon: Video, desc: "Vertical 9:16", res: "1080p" },
     { label: "YouTube", icon: Monitor, desc: "Landscape 16:9", res: "4K" },
     { label: "4K Master", icon: Film, desc: "Highest quality", res: "4K" },
   ];

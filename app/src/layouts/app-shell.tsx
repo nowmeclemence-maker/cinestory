@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "@tanstack/react-router";
 import {
   PanelLeftClose as IconSidebarCollapse,
   PanelLeftOpen as IconSidebarExpand,
+  Clapperboard as ClapperboardIcon,
 } from "lucide-react";
 import { Icon } from "@higgsfield/quanta/icon";
 import { Sidebar } from "@higgsfield/quanta/sidebar";
@@ -106,6 +107,3 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-
-// Dynamic import of Phosphor icon for the sidebar
-import { Clapperboard as ClapperboardIcon } from "@phosphor-icons/react";
