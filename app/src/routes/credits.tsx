@@ -6,14 +6,20 @@ import { Card } from "@higgsfield/quanta/card";
 import { Loader } from "@higgsfield/quanta/loader";
 import { AppShell } from "@/layouts/app-shell";
 import { createServerFn } from "@tanstack/react-start";
-import { getCreditBalance, getTransactions, CREDIT_PLANS } from "@/lib/services/credits";
+import { CREDIT_PLANS } from "@/lib/services/credits";
 
 export const Route = createFileRoute("/credits")({
   component: CreditsPage,
 });
 
-const getBalanceFn = createServerFn({ method: "POST" }).handler(() => getCreditBalance());
-const getTxFn = createServerFn({ method: "POST" }).handler(() => getTransactions());
+const getBalanceFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { getCreditBalance } = await import("@/lib/services/credits");
+  return getCreditBalance();
+});
+const getTxFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { getTransactions } = await import("@/lib/services/credits");
+  return getTransactions();
+});
 
 function CreditsPage() {
   const { data: balance, isLoading: balLoading } = useQuery({ queryKey: ["credits", "balance"], queryFn: () => getBalanceFn() });

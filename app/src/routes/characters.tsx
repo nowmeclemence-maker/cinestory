@@ -13,23 +13,34 @@ import { Plus, Users, Pencil, Trash2 } from "lucide-react";
 import { AppShell } from "@/layouts/app-shell";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { listCharacters, createCharacter, updateCharacter, deleteCharacter } from "@/lib/services/characters";
 import type { Character } from "@/lib/services/characters";
 
 export const Route = createFileRoute("/characters")({
   component: CharactersPage,
 });
 
-const listCharactersFn = createServerFn({ method: "POST" }).handler(() => listCharacters());
+const listCharactersFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { listCharacters } = await import("@/lib/services/characters");
+  return listCharacters();
+});
 const createCharacterFn = createServerFn({ method: "POST" })
   .validator(z.object({ name: z.string().min(1) }))
-  .handler(({ data }) => createCharacter({ name: data.name }));
+  .handler(async ({ data }) => {
+    const { createCharacter } = await import("@/lib/services/characters");
+    return createCharacter({ name: data.name });
+  });
 const updateCharacterFn = createServerFn({ method: "POST" })
   .validator(z.any())
-  .handler(({ data }) => updateCharacter(data.id, data));
+  .handler(async ({ data }) => {
+    const { updateCharacter } = await import("@/lib/services/characters");
+    return updateCharacter(data.id, data);
+  });
 const deleteCharacterFn = createServerFn({ method: "POST" })
   .validator(z.object({ id: z.string() }))
-  .handler(({ data }) => deleteCharacter(data.id));
+  .handler(async ({ data }) => {
+    const { deleteCharacter } = await import("@/lib/services/characters");
+    return deleteCharacter(data.id);
+  });
 
 function CharactersPage() {
   const qc = useQueryClient();
