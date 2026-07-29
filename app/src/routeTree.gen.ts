@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as StudioRouteImport } from './routes/studio'
 import { Route as WorkspaceRouteImport } from './routes/workspace'
 import { Route as TemplatesRouteImport } from './routes/templates'
 import { Route as PromptsRouteImport } from './routes/prompts'
@@ -43,6 +44,11 @@ const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StudioRoute = StudioRouteImport.update({
+  id: '/studio',
+  path: '/studio',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WorkspaceRoute = WorkspaceRouteImport.update({
@@ -133,6 +139,7 @@ const ApiStoriesIdAssembleRoute = ApiStoriesIdAssembleRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/studio': typeof StudioRoute
   '/workspace': typeof WorkspaceRoute
   '/templates': typeof TemplatesRoute
   '/prompts': typeof PromptsRoute
@@ -155,6 +162,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/studio': typeof StudioRoute
   '/workspace': typeof WorkspaceRoute
   '/templates': typeof TemplatesRoute
   '/prompts': typeof PromptsRoute
@@ -202,6 +210,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/studio'
     | '/workspace'
     | '/templates'
     | '/prompts'
@@ -224,6 +233,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/studio'
     | '/workspace'
     | '/templates'
     | '/prompts'
@@ -246,6 +256,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/studio'
     | '/workspace'
     | '/templates'
     | '/prompts'
@@ -269,6 +280,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  StudioRoute: typeof StudioRoute
   WorkspaceRoute: typeof WorkspaceRoute
   TemplatesRoute: typeof TemplatesRoute
   PromptsRoute: typeof PromptsRoute
@@ -311,6 +323,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/studio': {
+      id: '/studio'
+      path: '/studio'
+      fullPath: '/studio'
+      preLoaderRoute: typeof StudioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/workspace': {
@@ -437,6 +456,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  StudioRoute: StudioRoute,
   WorkspaceRoute: WorkspaceRoute,
   TemplatesRoute: TemplatesRoute,
   PromptsRoute: PromptsRoute,

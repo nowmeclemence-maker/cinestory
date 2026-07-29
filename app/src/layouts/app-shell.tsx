@@ -58,8 +58,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Sidebar.Section>
             <Sidebar.SectionItems>
               <Sidebar.Item
-                selected={currentPath === "/"}
-                onClick={() => handleNav("/")}
+                selected={currentPath === "/studio"}
+                onClick={() => handleNav("/studio")}
                 start={<IconTile as={ClapperboardIcon} gradient="blue" />}
                 title="Studio"
               />

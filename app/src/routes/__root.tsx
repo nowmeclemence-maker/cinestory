@@ -89,7 +89,7 @@ function NotFoundComponent() {
         title="Page not found"
         subtitle="The page you're looking for doesn't exist or has been moved."
       >
-        <Link to="/" className={button({ variant: "primary", size: "md" }, "mt-3")}>
+        <Link to="/studio" className={button({ variant: "primary", size: "md" }, "mt-3")}>
           Go home
         </Link>
       </NotFound>
