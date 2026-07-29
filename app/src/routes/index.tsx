@@ -3,29 +3,31 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@higgsfield/quanta/button";
 import { Icon } from "@higgsfield/quanta/icon";
 import { Typography } from "@higgsfield/quanta/typography";
-import { HeadContent } from "@tanstack/react-router";
 import {
-  ArrowRight, Check, ChevronDown, Clapperboard, Film, Image, Download,
-  Sparkles, Users, MapPin, Music, Mic, DownloadCloud, Star, Menu, X,
-  Quote,
+  ArrowRight, Check, ChevronDown, Clapperboard, Film, Image,
+  Sparkles, Users, MapPin, DownloadCloud, Menu, X, Quote,
 } from "lucide-react";
 import { appMeta, toOwnAssetUrl } from "@/lib/app-meta";
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "CineStory — AI Storytelling Studio" },
-      { name: "description", content: "Turn one idea into a cinematic short film. Upload a photo, pick a template, describe your story — AI does the rest." },
-      { property: "og:title", content: "CineStory — AI Storytelling Studio" },
-      { property: "og:description", content: "Turn one idea into a cinematic short film. No filming, no actors, no editing." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-      ...(appMeta.og_image_url ? [{ property: "og:image", content: toOwnAssetUrl(appMeta.og_image_url) }] : []),
-    ],
-    links: [
-      ...(appMeta.favicon_url ? [{ rel: "icon", href: toOwnAssetUrl(appMeta.favicon_url) }] : []),
-    ],
-  }),
+  head: () => {
+    const ogImage = appMeta.og_image_url ? toOwnAssetUrl(appMeta.og_image_url) : undefined;
+    const favicon = appMeta.favicon_url ? toOwnAssetUrl(appMeta.favicon_url) : undefined;
+    return {
+      meta: [
+        { title: "CineStory — AI Storytelling Studio" },
+        { name: "description", content: "Turn one idea into a cinematic short film. Upload a photo, pick a template, describe your story — AI does the rest." },
+        { property: "og:title", content: "CineStory — AI Storytelling Studio" },
+        { property: "og:description", content: "Turn one idea into a cinematic short film. No filming, no actors, no editing." },
+        { property: "og:type", content: "website" },
+        { name: "twitter:card", content: "summary_large_image" },
+        ...(ogImage ? [{ property: "og:image" as const, content: ogImage }] : []),
+      ],
+      links: [
+        ...(favicon ? [{ rel: "icon" as const, href: favicon }] : []),
+      ],
+    };
+  },
   component: LandingPage,
 });
 
