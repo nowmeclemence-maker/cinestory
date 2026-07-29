@@ -12,6 +12,18 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WorkspaceRouteImport } from './routes/workspace'
+import { Route as TemplatesRouteImport } from './routes/templates'
+import { Route as PromptsRouteImport } from './routes/prompts'
+import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as LocationsRouteImport } from './routes/locations'
+import { Route as ExportsRouteImport } from './routes/exports'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as CreditsRouteImport } from './routes/credits'
+import { Route as CharactersRouteImport } from './routes/characters'
+import { Route as BillingRouteImport } from './routes/billing'
+import { Route as AssetsRouteImport } from './routes/assets'
+import { Route as VoicesRouteImport } from './routes/voices'
 import { Route as ApiUserRouteImport } from './routes/api/user'
 import { Route as ApiStoryMediaSplatRouteImport } from './routes/api/story-media/$'
 import { Route as ApiMediaUploadRouteImport } from './routes/api/media/upload'
@@ -31,6 +43,66 @@ const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspaceRoute = WorkspaceRouteImport.update({
+  id: '/workspace',
+  path: '/workspace',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TemplatesRoute = TemplatesRouteImport.update({
+  id: '/templates',
+  path: '/templates',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PromptsRoute = PromptsRouteImport.update({
+  id: '/prompts',
+  path: '/prompts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsRoute = ProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LocationsRoute = LocationsRouteImport.update({
+  id: '/locations',
+  path: '/locations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExportsRoute = ExportsRouteImport.update({
+  id: '/exports',
+  path: '/exports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreditsRoute = CreditsRouteImport.update({
+  id: '/credits',
+  path: '/credits',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CharactersRoute = CharactersRouteImport.update({
+  id: '/characters',
+  path: '/characters',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BillingRoute = BillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AssetsRoute = AssetsRouteImport.update({
+  id: '/assets',
+  path: '/assets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VoicesRoute = VoicesRouteImport.update({
+  id: '/voices',
+  path: '/voices',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUserRoute = ApiUserRouteImport.update({
@@ -61,6 +133,18 @@ const ApiStoriesIdAssembleRoute = ApiStoriesIdAssembleRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/workspace': typeof WorkspaceRoute
+  '/templates': typeof TemplatesRoute
+  '/prompts': typeof PromptsRoute
+  '/projects': typeof ProjectsRoute
+  '/locations': typeof LocationsRoute
+  '/exports': typeof ExportsRoute
+  '/dashboard': typeof DashboardRoute
+  '/credits': typeof CreditsRoute
+  '/characters': typeof CharactersRoute
+  '/billing': typeof BillingRoute
+  '/assets': typeof AssetsRoute
+  '/voices': typeof VoicesRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/user': typeof ApiUserRoute
@@ -71,6 +155,18 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/workspace': typeof WorkspaceRoute
+  '/templates': typeof TemplatesRoute
+  '/prompts': typeof PromptsRoute
+  '/projects': typeof ProjectsRoute
+  '/locations': typeof LocationsRoute
+  '/exports': typeof ExportsRoute
+  '/dashboard': typeof DashboardRoute
+  '/credits': typeof CreditsRoute
+  '/characters': typeof CharactersRoute
+  '/billing': typeof BillingRoute
+  '/assets': typeof AssetsRoute
+  '/voices': typeof VoicesRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/user': typeof ApiUserRoute
@@ -82,6 +178,18 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/workspace': typeof WorkspaceRoute
+  '/templates': typeof TemplatesRoute
+  '/prompts': typeof PromptsRoute
+  '/projects': typeof ProjectsRoute
+  '/locations': typeof LocationsRoute
+  '/exports': typeof ExportsRoute
+  '/dashboard': typeof DashboardRoute
+  '/credits': typeof CreditsRoute
+  '/characters': typeof CharactersRoute
+  '/billing': typeof BillingRoute
+  '/assets': typeof AssetsRoute
+  '/voices': typeof VoicesRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/user': typeof ApiUserRoute
@@ -94,6 +202,18 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/workspace'
+    | '/templates'
+    | '/prompts'
+    | '/projects'
+    | '/locations'
+    | '/exports'
+    | '/dashboard'
+    | '/credits'
+    | '/characters'
+    | '/billing'
+    | '/assets'
+    | '/voices'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/api/user'
@@ -104,6 +224,18 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/workspace'
+    | '/templates'
+    | '/prompts'
+    | '/projects'
+    | '/locations'
+    | '/exports'
+    | '/dashboard'
+    | '/credits'
+    | '/characters'
+    | '/billing'
+    | '/assets'
+    | '/voices'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/api/user'
@@ -114,6 +246,18 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/workspace'
+    | '/templates'
+    | '/prompts'
+    | '/projects'
+    | '/locations'
+    | '/exports'
+    | '/dashboard'
+    | '/credits'
+    | '/characters'
+    | '/billing'
+    | '/assets'
+    | '/voices'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/api/user'
@@ -125,6 +269,18 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  WorkspaceRoute: typeof WorkspaceRoute
+  TemplatesRoute: typeof TemplatesRoute
+  PromptsRoute: typeof PromptsRoute
+  ProjectsRoute: typeof ProjectsRoute
+  LocationsRoute: typeof LocationsRoute
+  ExportsRoute: typeof ExportsRoute
+  DashboardRoute: typeof DashboardRoute
+  CreditsRoute: typeof CreditsRoute
+  CharactersRoute: typeof CharactersRoute
+  BillingRoute: typeof BillingRoute
+  AssetsRoute: typeof AssetsRoute
+  VoicesRoute: typeof VoicesRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiUserRoute: typeof ApiUserRoute
@@ -155,6 +311,90 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspace': {
+      id: '/workspace'
+      path: '/workspace'
+      fullPath: '/workspace'
+      preLoaderRoute: typeof WorkspaceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/templates': {
+      id: '/templates'
+      path: '/templates'
+      fullPath: '/templates'
+      preLoaderRoute: typeof TemplatesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prompts': {
+      id: '/prompts'
+      path: '/prompts'
+      fullPath: '/prompts'
+      preLoaderRoute: typeof PromptsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects': {
+      id: '/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/locations': {
+      id: '/locations'
+      path: '/locations'
+      fullPath: '/locations'
+      preLoaderRoute: typeof LocationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/exports': {
+      id: '/exports'
+      path: '/exports'
+      fullPath: '/exports'
+      preLoaderRoute: typeof ExportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/credits': {
+      id: '/credits'
+      path: '/credits'
+      fullPath: '/credits'
+      preLoaderRoute: typeof CreditsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/characters': {
+      id: '/characters'
+      path: '/characters'
+      fullPath: '/characters'
+      preLoaderRoute: typeof CharactersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/billing': {
+      id: '/billing'
+      path: '/billing'
+      fullPath: '/billing'
+      preLoaderRoute: typeof BillingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/assets': {
+      id: '/assets'
+      path: '/assets'
+      fullPath: '/assets'
+      preLoaderRoute: typeof AssetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/voices': {
+      id: '/voices'
+      path: '/voices'
+      fullPath: '/voices'
+      preLoaderRoute: typeof VoicesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/user': {
@@ -197,6 +437,18 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  WorkspaceRoute: WorkspaceRoute,
+  TemplatesRoute: TemplatesRoute,
+  PromptsRoute: PromptsRoute,
+  ProjectsRoute: ProjectsRoute,
+  LocationsRoute: LocationsRoute,
+  ExportsRoute: ExportsRoute,
+  DashboardRoute: DashboardRoute,
+  CreditsRoute: CreditsRoute,
+  CharactersRoute: CharactersRoute,
+  BillingRoute: BillingRoute,
+  AssetsRoute: AssetsRoute,
+  VoicesRoute: VoicesRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiUserRoute: ApiUserRoute,
