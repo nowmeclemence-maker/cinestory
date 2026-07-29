@@ -6,7 +6,7 @@ import { Card } from "@higgsfield/quanta/card";
 import { Loader } from "@higgsfield/quanta/loader";
 import { AppShell } from "@/layouts/app-shell";
 import { createServerFn } from "@tanstack/react-start";
-import { CREDIT_PLANS } from "@/lib/services/credits";
+import { CREDIT_PLANS } from "@/lib/services/plans";
 
 export const Route = createFileRoute("/credits")({
   component: CreditsPage,
