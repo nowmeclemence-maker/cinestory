@@ -572,6 +572,49 @@ async function submitSceneVideo(
   }
 }
 
+/**
+ * Advance one story's in-flight generation and return the updated story/scenes.
+ * Shared by getStory (single) and listStories (feed) so the pipeline progresses
+ * on every poll — otherwise the feed never submits the video jobs.
+ * A module-level guard prevents two concurrent polls from double-submitting
+ * the same video job (which would waste credits).
+ */
+const advancingStories = new Set<string>();
+
+async function resolveStory(
+  db: D1Database | null,
+  story: StoryRow,
+  scenes: SceneRow[],
+): Promise<{ story: StoryRow; scenes: SceneRow[] }> {
+  if (story.status !== "generating" || advancingStories.has(story.id)) {
+    return { story, scenes };
+  }
+  advancingStories.add(story.id);
+  try {
+    scenes = await advanceScenes(db, story, scenes);
+    const allReady = scenes.every((s) => s.status === "ready");
+    const anyFailed = scenes.some((s) => s.status === "failed");
+    if (allReady) {
+      await updateStory(db, story.id, { status: "assembling", progress_label: "Cutting the final film…" });
+      story = { ...story, status: "assembling" };
+    } else if (anyFailed && scenes.every((s) => s.status === "ready" || s.status === "failed")) {
+      await updateStory(db, story.id, {
+        status: "failed",
+        error: "One or more scenes could not be generated.",
+      });
+      story = { ...story, status: "failed" };
+    } else {
+      const done = scenes.filter((s) => s.status === "ready").length;
+      const label = `Filming scene ${Math.min(done + 1, scenes.length)} of ${scenes.length}…`;
+      await updateStory(db, story.id, { progress_label: label });
+      story = { ...story, progress_label: label };
+    }
+    return { story, scenes };
+  } finally {
+    advancingStories.delete(story.id);
+  }
+}
+
 export async function getStory(storyId: string, mediaBaseUrl = "/api/story-media"): Promise<StoryDTO> {
   const owner = await ownerKey();
   const db = await database();
@@ -596,28 +639,8 @@ export async function getStory(storyId: string, mediaBaseUrl = "/api/story-media
     throw new ApiJobError("story_not_found", "This story no longer exists.", { status: 404 });
   }
 
-  if (story.status === "generating") {
-    scenes = await advanceScenes(db, story, scenes);
-    const allReady = scenes.every((s) => s.status === "ready");
-    const anyFailed = scenes.some((s) => s.status === "failed");
-    if (allReady) {
-      await updateStory(db, storyId, { status: "assembling", progress_label: "Cutting the final film…" });
-      story = { ...story, status: "assembling" };
-    } else if (anyFailed && scenes.every((s) => s.status === "ready" || s.status === "failed")) {
-      await updateStory(db, storyId, {
-        status: "failed",
-        error: "One or more scenes could not be generated.",
-      });
-      story = { ...story, status: "failed" };
-    } else {
-      const done = scenes.filter((s) => s.status === "ready").length;
-      const label = `Filming scene ${Math.min(done + 1, scenes.length)} of ${scenes.length}…`;
-      await updateStory(db, storyId, { progress_label: label });
-      story = { ...story, progress_label: label };
-    }
-  }
-
-  return toDTO(story, scenes, mediaBaseUrl);
+  const resolved = await resolveStory(db, story, scenes);
+  return toDTO(resolved.story, resolved.scenes, mediaBaseUrl);
 }
 
 export async function listStories(projectId?: string): Promise<StoryDTO[]> {
@@ -643,7 +666,8 @@ export async function listStories(projectId?: string): Promise<StoryDTO[]> {
       .prepare("SELECT * FROM story_scenes WHERE story_id = ? ORDER BY idx ASC")
       .bind(story.id)
       .all<SceneRow>();
-    results.push(toDTO(story, sceneResult.results, "/api/story-media"));
+    const resolved = await resolveStory(db, story, sceneResult.results);
+    results.push(toDTO(resolved.story, resolved.scenes, "/api/story-media"));
   }
   return results;
 }
