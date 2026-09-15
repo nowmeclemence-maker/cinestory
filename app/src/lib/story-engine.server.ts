@@ -1,10 +1,10 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import { ApiJobError } from "@higgsfield/fnf/errors";
-import { createJobClient, getJobPhase, getRawUrl } from "@higgsfield/fnf/client";
 import { createLlmClient } from "@higgsfield/fnf";
-import { nanoBanana2, seedance2_0 } from "@higgsfield/fnf/jobs";
 import type { MediaRef } from "@higgsfield/fnf/media";
 import { createServerFnf } from "./fnf.server";
+import type { SceneAspectRatio } from "./generation/port";
+import { getGenerationProvider } from "./generation/registry.server";
 import {
   DEFAULT_DURATION_SECONDS,
   getLocation,
@@ -12,10 +12,8 @@ import {
   sceneCountForDuration,
 } from "./story-templates";
 
-const jobs = createJobClient({
-  adapter: createServerFnf().adapter,
-  jobs: [nanoBanana2, seedance2_0],
-});
+/** Every CineStory scene is shot vertically. */
+const SCENE_ASPECT_RATIO: SceneAspectRatio = "9:16";
 
 export interface StoredRef {
   ref: MediaRef;
@@ -413,17 +411,12 @@ async function submitSceneImage(
       .filter(Boolean)
       .join(" ");
 
-    const result = await jobs.submit({
-      model: "nano_banana_2",
-      prompt: { instruction },
-      ...(images.length > 0 ? { media: { image: images } } : {}),
-      settings: {
-        aspectRatio: "9:16",
-        batchSize: 1,
-      },
-    } as never);
-    const generation = result.generations[0];
-    await updateScene(db, storyId, scene.id, { status: "image_generating", image_job_id: generation.id });
+    const job = await getGenerationProvider().submitSceneImage({
+      instruction,
+      references: images,
+      aspectRatio: SCENE_ASPECT_RATIO,
+    });
+    await updateScene(db, storyId, scene.id, { status: "image_generating", image_job_id: job.jobId });
   } catch (error) {
     await updateScene(db, storyId, scene.id, {
       status: "failed",
@@ -477,38 +470,37 @@ async function updateStory(
 async function advanceScenes(db: D1Database | null, story: StoryRow, scenes: SceneRow[]): Promise<SceneRow[]> {
   const template = getTemplate(story.template_id);
   const location = getLocation(story.location_id, template);
+  const provider = getGenerationProvider();
   const next: SceneRow[] = [];
 
   for (const scene of scenes) {
     if (scene.status === "image_generating" && scene.image_job_id) {
-      const generation = await jobs.get(scene.image_job_id).catch(() => null);
-      if (!generation) {
+      const job = await provider.getSceneJob(scene.image_job_id);
+      if (!job) {
         next.push(scene);
         continue;
       }
-      const phase = getJobPhase(generation);
-      if (phase === "completed") {
-        const imageUrl = getRawUrl(generation) ?? "";
+      if (job.phase === "completed") {
+        const imageUrl = job.rawUrl ?? "";
         await submitSceneVideo(db, story, scene, imageUrl, template, location);
         next.push({ ...scene, status: "video_generating", image_url: imageUrl });
-      } else if (phase === "failed") {
+      } else if (job.phase === "failed") {
         await updateScene(db, story.id, scene.id, { status: "failed", error: "Scene image failed to generate." });
         next.push({ ...scene, status: "failed" });
       } else {
         next.push(scene);
       }
     } else if (scene.status === "video_generating" && scene.video_job_id) {
-      const generation = await jobs.get(scene.video_job_id).catch(() => null);
-      if (!generation) {
+      const job = await provider.getSceneJob(scene.video_job_id);
+      if (!job) {
         next.push(scene);
         continue;
       }
-      const phase = getJobPhase(generation);
-      if (phase === "completed") {
-        const videoUrl = getRawUrl(generation) ?? "";
+      if (job.phase === "completed") {
+        const videoUrl = job.rawUrl ?? "";
         await updateScene(db, story.id, scene.id, { status: "ready", video_url: videoUrl });
         next.push({ ...scene, status: "ready", video_url: videoUrl });
-      } else if (phase === "failed") {
+      } else if (job.phase === "failed") {
         await updateScene(db, story.id, scene.id, { status: "failed", error: "Scene video failed to generate." });
         next.push({ ...scene, status: "failed" });
       } else {
@@ -530,13 +522,11 @@ async function submitSceneVideo(
   location: ReturnType<typeof getLocation>,
 ): Promise<void> {
   try {
-    const media = createServerFnf().media;
+    const provider = getGenerationProvider();
     const imageBytes = new Uint8Array(await (await fetch(startImageUrl)).arrayBuffer());
-    const { ref: startImageRef } = await media.upload({
+    const { ref: startImageRef } = await provider.uploadReference({
       source: imageBytes,
       filename: `scene-${scene.idx}.png`,
-      type: "image",
-      forceIpCheck: true,
     });
     const targetSceneSeconds = Math.max(3, Math.min(10, Math.round(story.duration_sec / story.scene_count)));
     const clipDuration = targetSceneSeconds <= 7 ? 5 : 10;
@@ -551,19 +541,13 @@ async function submitSceneVideo(
       .filter(Boolean)
       .join(" ");
 
-    const result = await jobs.submit({
-      model: "seedance_2_0",
-      prompt: { instruction },
-      media: { image: [startImageRef] },
-      settings: {
-        mode: "std",
-        duration: clipDuration,
-        aspectRatio: "9:16",
-        batchSize: 1,
-      },
-    } as never);
-    const generation = result.generations[0];
-    await updateScene(db, story.id, scene.id, { status: "video_generating", video_job_id: generation.id });
+    const job = await provider.submitSceneVideo({
+      instruction,
+      startImage: startImageRef,
+      aspectRatio: SCENE_ASPECT_RATIO,
+      durationSeconds: clipDuration,
+    });
+    await updateScene(db, story.id, scene.id, { status: "video_generating", video_job_id: job.jobId });
   } catch (error) {
     await updateScene(db, story.id, scene.id, {
       status: "failed",
