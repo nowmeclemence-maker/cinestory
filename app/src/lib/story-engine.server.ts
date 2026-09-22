@@ -45,6 +45,9 @@ export interface StoryDTO {
   sceneCount: number;
   status: string;
   progressLabel: string | null;
+  currentStep: string;
+  estimatedCost: number;
+  spentCost: number;
   title: string | null;
   hook: string | null;
   cta: string | null;
@@ -69,6 +72,9 @@ interface StoryRow {
   scene_count: number;
   status: string;
   progress_label: string | null;
+  current_step?: string;
+  estimated_cost?: number;
+  spent_cost?: number;
   title: string | null;
   hook: string | null;
   cta: string | null;
@@ -98,6 +104,7 @@ interface SceneRow {
   video_job_id: string | null;
   video_url: string | null;
   error: string | null;
+  retry_count?: number;
 }
 
 interface DevState {
@@ -156,6 +163,9 @@ function toDTO(story: StoryRow, scenes: SceneRow[], mediaBaseUrl: string): Story
     sceneCount: story.scene_count,
     status: story.status,
     progressLabel: story.progress_label,
+    currentStep: story.current_step ?? "old",
+    estimatedCost: Number(story.estimated_cost ?? 0),
+    spentCost: Number(story.spent_cost ?? 0),
     title: story.title,
     hook: story.hook,
     cta: story.cta,
@@ -287,6 +297,12 @@ export async function createStory(input: {
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+
+  // Estimated cost (before regenerations): 1.5 credits per storyboard image +
+  // 22.5 (5 s) or 45 (10 s) per video clip — confirmed Higgsfield pricing.
+  const clipSeconds = clipDurationFor(storySeconds(durationSec, script.scenes.length));
+  const estimatedCost = script.scenes.length * 1.5 + script.scenes.length * (clipSeconds === 10 ? 45 : 22.5);
+
   const row: StoryRow = {
     id,
     project_id: input.projectId ?? null,
@@ -297,6 +313,9 @@ export async function createStory(input: {
     scene_count: script.scenes.length,
     status: "generating",
     progress_label: "Casting your scenes…",
+    current_step: "video",
+    estimated_cost: estimatedCost,
+    spent_cost: 0,
     title: script.title,
     hook: script.hook,
     cta: script.cta,
@@ -333,8 +352,8 @@ export async function createStory(input: {
   } else {
     await db
       .prepare(
-        `INSERT INTO stories (id, owner_key, project_id, idea, template_id, location_id, duration_sec, scene_count, status, progress_label, title, hook, cta, music_mood, color_grade, script_json, selfie_ref, reference_ref)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO stories (id, owner_key, project_id, idea, template_id, location_id, duration_sec, scene_count, status, progress_label, current_step, estimated_cost, spent_cost, title, hook, cta, music_mood, color_grade, script_json, selfie_ref, reference_ref)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .bind(
         id,
@@ -347,6 +366,9 @@ export async function createStory(input: {
         row.scene_count,
         row.status,
         row.progress_label,
+        row.current_step ?? "video",
+        row.estimated_cost ?? 0,
+        row.spent_cost ?? 0,
         row.title,
         row.hook,
         row.cta,
@@ -466,6 +488,35 @@ async function updateStory(
     .run();
 }
 
+/** Seconds per scene for a requested duration (used for clip length + cost). */
+function storySeconds(durationSec: number, sceneCount: number): number {
+  return Math.max(3, Math.min(10, Math.round(durationSec / Math.max(1, sceneCount))));
+}
+
+/** Current engine behavior: clips snap to 5 or 10 s (exact duration arrives at Lot B). */
+function clipDurationFor(secondsPerScene: number): 5 | 10 {
+  return secondsPerScene <= 7 ? 5 : 10;
+}
+
+/** Max polls before a missing job is treated as permanently lost (no infinite spinner). */
+const MAX_JOB_POLLS = 6;
+
+/** Best-effort display-credit balance; fail-open so a wallet API change never blocks a story. */
+async function getDisplayCredits(): Promise<number> {
+  try {
+    const profile = createServerFnf().profile;
+    const credits = await profile.getCredits();
+    return Number.isFinite(credits) ? credits : Number.POSITIVE_INFINITY;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+/** The generation port deliberately hides provider failure detail; give a clear contextual message. */
+function jobError(_job: unknown, fallback: string): string {
+  return fallback;
+}
+
 /** Advance every in-flight scene one step (image done -> submit video; video done -> ready). */
 async function advanceScenes(db: D1Database | null, story: StoryRow, scenes: SceneRow[]): Promise<SceneRow[]> {
   const template = getTemplate(story.template_id);
@@ -473,11 +524,49 @@ async function advanceScenes(db: D1Database | null, story: StoryRow, scenes: Sce
   const provider = getGenerationProvider();
   const next: SceneRow[] = [];
 
+  // ── Balance gate (the July bug): never launch video jobs the balance can't cover.
+  const pendingVideos = scenes.filter((s) => s.status === "image_generating").length;
+  if (pendingVideos > 0) {
+    const clipCost = clipDurationFor(storySeconds(story.duration_sec, story.scene_count)) === 10 ? 45 : 22.5;
+    const pendingCost = pendingVideos * clipCost;
+    const available = await getDisplayCredits();
+    if (available < pendingCost) {
+      const exact = `Not enough credits for videos: ${pendingCost} needed, ${Math.floor(available)} available. Add credits in Settings → Credits.`;
+      const failedScenes = scenes.map((s) => {
+        if (s.status === "image_generating" || s.status === "video_generating") {
+          return { ...s, status: "failed" as const, error: s.error ?? exact };
+        }
+        return s;
+      });
+      await db?.batch([
+        ...failedScenes
+          .filter((s) => s.status === "failed" && s.id !== "")
+          .map((s) =>
+            db
+              .prepare("UPDATE story_scenes SET status='failed', error=?, retry_count=retry_count+1 WHERE id=? AND story_id=?")
+              .bind(s.error ?? exact, s.id, story.id),
+          ),
+        db.prepare("UPDATE stories SET status='failed', error=?, updated_at=datetime('now') WHERE id=?").bind(exact, story.id),
+      ]);
+      return failedScenes;
+    }
+  }
+
   for (const scene of scenes) {
     if (scene.status === "image_generating" && scene.image_job_id) {
       const job = await provider.getSceneJob(scene.image_job_id);
       if (!job) {
-        next.push(scene);
+        const retries = (scene.retry_count ?? 0) + 1;
+        await db?.prepare("UPDATE story_scenes SET retry_count=? WHERE id=? AND story_id=?")
+          .bind(retries, scene.id, story.id)
+          .run();
+        if (retries >= MAX_JOB_POLLS) {
+          const exact = "Image job not found (it was removed or expired). Regenerate this scene.";
+          await updateScene(db, story.id, scene.id, { status: "failed", error: exact });
+          next.push({ ...scene, status: "failed", error: exact });
+        } else {
+          next.push(scene);
+        }
         continue;
       }
       if (job.phase === "completed") {
@@ -485,15 +574,26 @@ async function advanceScenes(db: D1Database | null, story: StoryRow, scenes: Sce
         await submitSceneVideo(db, story, scene, imageUrl, template, location);
         next.push({ ...scene, status: "video_generating", image_url: imageUrl });
       } else if (job.phase === "failed") {
-        await updateScene(db, story.id, scene.id, { status: "failed", error: "Scene image failed to generate." });
-        next.push({ ...scene, status: "failed" });
+        const exact = jobError(job, "Scene image failed to generate.");
+        await updateScene(db, story.id, scene.id, { status: "failed", error: exact });
+        next.push({ ...scene, status: "failed", error: exact });
       } else {
         next.push(scene);
       }
     } else if (scene.status === "video_generating" && scene.video_job_id) {
       const job = await provider.getSceneJob(scene.video_job_id);
       if (!job) {
-        next.push(scene);
+        const retries = (scene.retry_count ?? 0) + 1;
+        await db?.prepare("UPDATE story_scenes SET retry_count=? WHERE id=? AND story_id=?")
+          .bind(retries, scene.id, story.id)
+          .run();
+        if (retries >= MAX_JOB_POLLS) {
+          const exact = "Video job not found (it was removed or expired). Regenerate this scene.";
+          await updateScene(db, story.id, scene.id, { status: "failed", error: exact });
+          next.push({ ...scene, status: "failed", error: exact });
+        } else {
+          next.push(scene);
+        }
         continue;
       }
       if (job.phase === "completed") {
@@ -501,8 +601,9 @@ async function advanceScenes(db: D1Database | null, story: StoryRow, scenes: Sce
         await updateScene(db, story.id, scene.id, { status: "ready", video_url: videoUrl });
         next.push({ ...scene, status: "ready", video_url: videoUrl });
       } else if (job.phase === "failed") {
-        await updateScene(db, story.id, scene.id, { status: "failed", error: "Scene video failed to generate." });
-        next.push({ ...scene, status: "failed" });
+        const exact = jobError(job, "Scene video failed to generate.");
+        await updateScene(db, story.id, scene.id, { status: "failed", error: exact });
+        next.push({ ...scene, status: "failed", error: exact });
       } else {
         next.push(scene);
       }
@@ -528,8 +629,7 @@ async function submitSceneVideo(
       source: imageBytes,
       filename: `scene-${scene.idx}.png`,
     });
-    const targetSceneSeconds = Math.max(3, Math.min(10, Math.round(story.duration_sec / story.scene_count)));
-    const clipDuration = targetSceneSeconds <= 7 ? 5 : 10;
+    const clipDuration = clipDurationFor(storySeconds(story.duration_sec, story.scene_count));
 
     const instruction = [
       `${template.title} short film scene.`,
@@ -547,7 +647,14 @@ async function submitSceneVideo(
       aspectRatio: SCENE_ASPECT_RATIO,
       durationSeconds: clipDuration,
     });
-    await updateScene(db, story.id, scene.id, { status: "video_generating", video_job_id: job.jobId });
+    // Persist the storyboard image (it used to stay invisible in the app) so
+    // the scene always shows what was generated, even if the video fails.
+    await updateScene(db, story.id, scene.id, {
+      status: "video_generating",
+      video_job_id: job.jobId,
+      image_url: startImageUrl,
+      retry_count: 0,
+    });
   } catch (error) {
     await updateScene(db, story.id, scene.id, {
       status: "failed",
@@ -582,11 +689,16 @@ async function resolveStory(
       await updateStory(db, story.id, { status: "assembling", progress_label: "Cutting the final film…" });
       story = { ...story, status: "assembling" };
     } else if (anyFailed && scenes.every((s) => s.status === "ready" || s.status === "failed")) {
+      // Surface the precise cause instead of a generic message: find the first
+      // scene with an error (e.g. "Not enough credits for videos: 67.5 needed…").
+      const firstFailure = scenes.find((s) => s.status === "failed" && s.error)?.error;
+      const exactError = firstFailure ?? `Scene ${(scenes.find((s) => s.status === "failed")?.idx ?? 1) + 1} could not be generated.`;
       await updateStory(db, story.id, {
         status: "failed",
-        error: "One or more scenes could not be generated.",
+        error: exactError,
+        progress_label: null,
       });
-      story = { ...story, status: "failed" };
+      story = { ...story, status: "failed", error: exactError, progress_label: null };
     } else {
       const done = scenes.filter((s) => s.status === "ready").length;
       const label = `Filming scene ${Math.min(done + 1, scenes.length)} of ${scenes.length}…`;
