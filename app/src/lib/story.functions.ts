@@ -2,11 +2,17 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import {
   createStory,
+  generateCharacterPortrait,
   getStory,
+  linkCharacter,
   listStories,
+  listStoryCharacters,
+  proposeCharacters,
   regenerateSceneImage,
   regenerateScript,
+  unlinkCharacter,
   updateScript,
+  validateCharacters,
   validateScript,
   validateStoryboard,
 } from "./story-engine.server";
@@ -89,3 +95,70 @@ export const validateStoryboardFn = createServerFn({ method: "POST" })
 export const regenerateSceneImageFn = createServerFn({ method: "POST" })
   .validator(z.object({ storyId: z.string().min(1), sceneId: z.string().min(1) }))
   .handler(({ data }) => regenerateSceneImage(data.storyId, data.sceneId));
+
+// ─── Lot C: casting ──────────────────────────────────────────────────────────
+
+export const listStoryCharactersFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1) }))
+  .handler(({ data }) => listStoryCharacters(data.storyId));
+
+export const proposeCharactersFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1) }))
+  .handler(({ data }) => proposeCharacters(data.storyId));
+
+export const linkCharacterFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      storyId: z.string().min(1),
+      characterId: z.string().min(1),
+      sceneIndices: z.array(z.number().int().nonnegative()).nullable().optional(),
+    }),
+  )
+  .handler(({ data }) => linkCharacter(data.storyId, data.characterId, data.sceneIndices ?? null));
+
+export const unlinkCharacterFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1), characterId: z.string().min(1) }))
+  .handler(({ data }) => unlinkCharacter(data.storyId, data.characterId));
+
+export const generateCharacterPortraitFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1), characterId: z.string().min(1) }))
+  .handler(({ data }) => generateCharacterPortrait(data.storyId, data.characterId));
+
+export const validateCharactersFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1) }))
+  .handler(({ data }) => validateCharacters(data.storyId));
+
+/** Edit a character sheet (appearance etc.) from the cast screen (owner-scoped). */
+export const updateCharacterSheetFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      characterId: z.string().min(1),
+      data: z.record(z.string(), z.any()),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { updateCharacter } = await import("./services/characters");
+    return updateCharacter(data.characterId, data.data);
+  });
+
+/** Append one reference photo to a character (from an app upload). */
+export const addCharacterImageFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      characterId: z.string().min(1),
+      ref: z.any(),
+      src: z.string(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { getCharacter, updateCharacter } = await import("./services/characters");
+    const character = await getCharacter(data.characterId);
+    const images = [...character.referenceImages, { ref: data.ref, src: data.src }];
+    return updateCharacter(data.characterId, { referenceImages: images });
+  });
+
+/** The user's Character Library (server-side only — never bunded to the client). */
+export const listLibraryCharactersFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { listCharacters } = await import("./services/characters");
+  return listCharacters();
+});

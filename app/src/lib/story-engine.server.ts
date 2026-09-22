@@ -3,7 +3,7 @@ import { ApiJobError } from "@higgsfield/fnf/errors";
 import { createLlmClient } from "@higgsfield/fnf";
 import type { MediaRef } from "@higgsfield/fnf/media";
 import { createServerFnf } from "./fnf.server";
-import type { SceneAspectRatio } from "./generation/port";
+import type { GenerationMediaRef, SceneAspectRatio } from "./generation/port";
 import { getGenerationProvider } from "./generation/registry.server";
 import {
   DEFAULT_DURATION_SECONDS,
@@ -598,38 +598,20 @@ export async function regenerateScript(storyId: string): Promise<StoryDTO> {
 }
 
 /**
- * Lot B — script validated: the story moves to the Storyboard step and the
- * per-scene images start. Balance is checked BEFORE launching any image job
- * (nothing is spent if the balance can't cover the storyboard).
+ * Lot C — script validated: the story moves to the Characters (casting) step.
+ * The user proposes/picks the cast and gives each member a reference photo or
+ * generated portrait BEFORE any image is spent (validateCharacters launches
+ * the storyboard once the cast is ready).
  */
 export async function validateScript(storyId: string): Promise<StoryDTO> {
   const { db, story } = await loadOwnedStory(storyId);
   if (story.status !== "draft") return getStory(storyId);
 
-  const scenes = await loadScenes(db, storyId);
-  const imageCost = scenes.length * IMAGE_COST_CREDITS;
-  const available = await getDisplayCredits();
-  if (available < imageCost) {
-    throw new ApiJobError(
-      "insufficient_credits",
-      `Not enough credits for the storyboard: ${imageCost} needed, ${Math.floor(available)} available. Add credits in Settings → Credits.`,
-      { status: 402 },
-    );
-  }
-
-  const template = getTemplate(story.template_id);
-  const location = getLocation(story.location_id, template);
   await updateStory(db, storyId, {
-    status: "storyboard",
-    current_step: "storyboard",
-    progress_label: "Storyboarding scene 1…",
+    status: "characters",
+    current_step: "characters",
+    progress_label: "Cast your story…",
   });
-  const running = { ...story, status: "storyboard" as const };
-  await Promise.all(
-    scenes.map((scene) =>
-      submitSceneImage(running.owner_key ?? "", db, storyId, scene, running, template, location),
-    ),
-  );
   return getStory(storyId);
 }
 
@@ -701,6 +683,355 @@ export async function regenerateSceneImage(storyId: string, sceneId: string): Pr
   return getStory(storyId);
 }
 
+export const MAX_CAST = 3;
+
+interface CastImage {
+  ref: MediaRef;
+  src: string;
+}
+
+interface CastRow {
+  characterId: string;
+  name: string;
+  role: string;
+  biography: string;
+  appearance: string;
+  personality: string;
+  clothing: string;
+  referenceImages: CastImage[];
+  sceneIndices: number[] | null;
+  portraitJobId: string | null;
+}
+
+/** The story's cast (library characters linked via story_characters). */
+async function loadCast(db: D1Database | null, storyId: string): Promise<CastRow[]> {
+  if (!db) return [];
+  const rows = await db
+    .prepare(
+      `SELECT c.id, c.name, c.role, c.biography, c.appearance, c.personality, c.clothing,
+              c.reference_images, c.portrait_job_id, sc.scene_indices
+       FROM story_characters sc
+       JOIN characters c ON c.id = sc.character_id
+       WHERE sc.story_id = ?
+       ORDER BY c.created_at ASC`,
+    )
+    .bind(storyId)
+    .all();
+  return (rows.results ?? []).map((row) => ({
+    characterId: row.id as string,
+    name: (row.name as string) ?? "Character",
+    role: (row.role as string) ?? "",
+    biography: (row.biography as string) ?? "",
+    appearance: (row.appearance as string) ?? "",
+    personality: (row.personality as string) ?? "",
+    clothing: (row.clothing as string) ?? "",
+    referenceImages: tryParseJson<CastImage[]>((row.reference_images as string) ?? "", []),
+    sceneIndices: tryParseJson<number[] | null>((row.scene_indices as string | null) ?? null, null),
+    portraitJobId: ((row.portrait_job_id as string | null) ?? null),
+  }));
+}
+
+/** Reference media + prompt lines for ONE scene, from the scene's cast. */
+function castForScene(cast: CastRow[], sceneIdx: number): { refs: GenerationMediaRef[]; lines: string[] } {
+  const refs: GenerationMediaRef[] = [];
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const member of cast) {
+    if (member.sceneIndices && !member.sceneIndices.includes(sceneIdx)) continue;
+    for (const image of member.referenceImages) {
+      const id = image.ref?.id;
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        refs.push({ id, type: "media_input" });
+      }
+    }
+    const looks = [member.appearance.trim(), member.clothing.trim() ? `wearing ${member.clothing.trim()}` : ""]
+      .filter(Boolean)
+      .join(", ");
+    lines.push(
+      `${member.name}${member.role ? ` (${member.role})` : ""}${looks ? `: ${looks}` : ""}`,
+    );
+  }
+  return { refs, lines };
+}
+
+export interface CastMemberDTO {
+  characterId: string;
+  name: string;
+  role: string;
+  biography: string;
+  appearance: string;
+  personality: string;
+  clothing: string;
+  portraitUrl: string | null;
+  hasReference: boolean;
+  portraitJobId: string | null;
+  sceneIndices: number[] | null;
+}
+
+/** The story's cast, shaped for the casting screen. Resolves finished portraits first. */
+export async function listStoryCharacters(storyId: string): Promise<CastMemberDTO[]> {
+  const { db } = await loadOwnedStory(storyId);
+  await pollCharacterPortraits(db, storyId);
+  const cast = await loadCast(db, storyId);
+  return cast.map((member) => ({
+    characterId: member.characterId,
+    name: member.name,
+    role: member.role,
+    biography: member.biography,
+    appearance: member.appearance,
+    personality: member.personality,
+    clothing: member.clothing,
+    portraitUrl: member.referenceImages[0]?.src ?? null,
+    hasReference: member.referenceImages.length > 0,
+    portraitJobId: member.portraitJobId,
+    sceneIndices: member.sceneIndices,
+  }));
+}
+
+async function linkCharacterRow(
+  db: D1Database | null,
+  storyId: string,
+  characterId: string,
+  sceneIndices: number[] | null,
+): Promise<void> {
+  if (!db) return;
+  await db
+    .prepare(
+      `INSERT INTO story_characters (story_id, character_id, scene_indices) VALUES (?,?,?)
+       ON CONFLICT(story_id, character_id) DO UPDATE SET scene_indices = excluded.scene_indices`,
+    )
+    .bind(storyId, characterId, sceneIndices ? JSON.stringify(sceneIndices) : null)
+    .run();
+}
+
+/** Link a library character to a story (sceneIndices null = appears in every scene). */
+export async function linkCharacter(
+  storyId: string,
+  characterId: string,
+  sceneIndices: number[] | null = null,
+): Promise<CastMemberDTO[]> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "characters") {
+    throw new ApiJobError("casting_locked", "The cast can only be edited at the Characters step.", { status: 409 });
+  }
+  const cast = await loadCast(db, storyId);
+  if (cast.length >= MAX_CAST && !cast.some((c) => c.characterId === characterId)) {
+    throw new ApiJobError("cast_limit", `A story can have at most ${MAX_CAST} characters.`, { status: 409 });
+  }
+  await linkCharacterRow(db, storyId, characterId, sceneIndices);
+  return listStoryCharacters(storyId);
+}
+
+/** Remove a character from the story's cast. */
+export async function unlinkCharacter(storyId: string, characterId: string): Promise<CastMemberDTO[]> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "characters") {
+    throw new ApiJobError("casting_locked", "The cast can only be edited at the Characters step.", { status: 409 });
+  }
+  if (db) {
+    await db
+      .prepare("DELETE FROM story_characters WHERE story_id = ? AND character_id = ?")
+      .bind(storyId, characterId)
+      .run();
+  }
+  return listStoryCharacters(storyId);
+}
+
+/**
+ * Lot C — the AI proposes 1–3 characters deduced from the script. They are
+ * created in the reusable Character Library and linked to this story. The
+ * protagonist (first proposal) inherits the user's selfie as its reference
+ * photo, so the story stays centred on the user's face.
+ */
+export async function proposeCharacters(storyId: string): Promise<CastMemberDTO[]> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "characters") {
+    throw new ApiJobError("casting_locked", "The cast can only be proposed at the Characters step.", { status: 409 });
+  }
+  const existing = await loadCast(db, storyId);
+  if (existing.length > 0) {
+    throw new ApiJobError("cast_not_empty", "The story already has a cast. Remove members to propose a new one.", { status: 409 });
+  }
+
+  const llm = createLlmClient({ baseUrl: "https://fnf.internal/llm" });
+  const [model] = await llm.listModels();
+  if (!model) throw new ApiJobError("llm_unavailable", "No script-writing model is currently available.");
+
+  const system = [
+    "You are the casting director for CineStory, an AI cinematic short-video studio.",
+    "From the story's script, deduce the characters who appear on screen: 1 to 3 characters maximum.",
+    "The FIRST character is the protagonist (the person the story follows); if the story is first-person (myself/me), name them after the story's subject.",
+    "Respond with ONLY strict JSON, no markdown fences:",
+    '[{"name": string, "role": string, "biography": string, "appearance": string, "personality": string, "clothing": string}]',
+    "appearance: concrete physical description (age, build, hair, skin, face). clothing: what they wear. biography: one short paragraph.",
+  ].join("\n");
+
+  const res = await llm.complete({
+    model,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: `Idea: ${story.idea}\n\nScript: ${story.script_json ?? ""}` },
+    ],
+  });
+  const parsed = extractJson(String(res.content ?? "")) as Array<Record<string, unknown>>;
+  const proposals = Array.isArray(parsed) ? parsed.slice(0, MAX_CAST) : [];
+  if (proposals.length === 0) {
+    throw new ApiJobError("cast_invalid", "The casting director returned no characters.", { status: 502 });
+  }
+
+  const selfie: StoredRef | null = story.selfie_ref ? (JSON.parse(story.selfie_ref) as StoredRef) : null;
+
+  const created: CastMemberDTO[] = [];
+  for (let i = 0; i < proposals.length; i++) {
+    const p = proposals[i];
+    const { createCharacter } = await import("./services/characters");
+    const character = await createCharacter({
+      name: String(p.name ?? `Character ${i + 1}`),
+      role: String(p.role ?? (i === 0 ? "Protagonist" : "")),
+      biography: String(p.biography ?? ""),
+      appearance: String(p.appearance ?? ""),
+      personality: String(p.personality ?? ""),
+      clothing: String(p.clothing ?? ""),
+      // The protagonist inherits the user's selfie for scene-to-scene consistency.
+      referenceImages: i === 0 && selfie ? [{ ref: selfie.ref, src: selfie.src }] : [],
+    });
+    await linkCharacterRow(db, storyId, character.id, null);
+    created.push({
+      characterId: character.id,
+      name: character.name,
+      role: character.role,
+      biography: character.biography,
+      appearance: character.appearance,
+      personality: character.personality,
+      clothing: character.clothing,
+      portraitUrl: character.referenceImages[0]?.src ?? null,
+      hasReference: character.referenceImages.length > 0,
+      portraitJobId: character.portraitJobId,
+      sceneIndices: null,
+    });
+  }
+  await updateStory(db, storyId, { progress_label: "Cast proposed — add photos or generate portraits." });
+  return created;
+}
+
+/**
+ * Lot C — generate a portrait for one cast member from their appearance
+ * (1.5 credits). The provider job runs async; pollCharacterPortraits (called on
+ * every story read) stores the finished portrait as the member's reference.
+ */
+export async function generateCharacterPortrait(storyId: string, characterId: string): Promise<CastMemberDTO[]> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "characters") {
+    throw new ApiJobError("casting_locked", "The cast can only be edited at the Characters step.", { status: 409 });
+  }
+  const cast = await loadCast(db, storyId);
+  const member = cast.find((c) => c.characterId === characterId);
+  if (!member) throw new ApiJobError("not_in_cast", "This character is not in the story's cast.", { status: 404 });
+
+  const appearance =
+    [member.appearance.trim(), member.clothing.trim() ? `wearing ${member.clothing.trim()}` : ""]
+      .filter(Boolean)
+      .join(", ") || "a distinctive cinematic character";
+  const instruction = `Photoreal 3:4 cinematic character portrait of ${member.name}: ${appearance}. ${member.personality ? `Personality: ${member.personality}. ` : ""}Studio lighting, shallow depth of field, neutral background, face clearly visible.`;
+
+  const job = await getGenerationProvider().submitSceneImage({
+    instruction,
+    references: [],
+    aspectRatio: "3:4",
+  });
+  if (db) {
+    await db
+      .prepare("UPDATE characters SET portrait_job_id = ? WHERE id = ?")
+      .bind(job.jobId, characterId)
+      .run();
+  }
+  return listStoryCharacters(storyId);
+}
+
+/** Resolve finished portrait jobs into persistent reference images. */
+async function pollCharacterPortraits(db: D1Database | null, storyId: string): Promise<void> {
+  if (!db) return;
+  const rows = await db
+    .prepare(
+      `SELECT c.id, c.appearance, c.portrait_job_id, c.reference_images
+       FROM story_characters sc JOIN characters c ON c.id = sc.character_id
+       WHERE sc.story_id = ? AND c.portrait_job_id IS NOT NULL`,
+    )
+    .bind(storyId)
+    .all();
+  const provider = getGenerationProvider();
+  for (const row of rows.results ?? []) {
+    const jobId = row.portrait_job_id as string;
+    const job = await provider.getSceneJob(jobId).catch(() => null);
+    if (!job) continue;
+    if (job.phase === "failed") {
+      await db.prepare("UPDATE characters SET portrait_job_id = NULL WHERE id = ?").bind(row.id).run();
+      continue;
+    }
+    if (job.phase !== "completed" || !job.rawUrl) continue;
+    try {
+      const bytes = new Uint8Array(await (await fetch(job.rawUrl)).arrayBuffer());
+      const uploaded = await provider.uploadReference({ source: bytes, filename: `portrait-${row.id}.png` });
+      if (!uploaded.ref) continue;
+      const current = tryParseJson<CastImage[]>((row.reference_images as string) ?? "", []);
+      current.push({ ref: uploaded.ref as unknown as MediaRef, src: uploaded.url ?? "" });
+      await db
+        .prepare("UPDATE characters SET portrait_job_id = NULL, reference_images = ? WHERE id = ?")
+        .bind(JSON.stringify(current), row.id)
+        .run();
+    } catch {
+      // transient fetch/upload failure — leave the job id set, retry next poll
+    }
+  }
+}
+
+/**
+ * Lot C — the paid gate into the storyboard: every cast member needs a
+ * reference photo or generated portrait, then the balance is checked BEFORE
+ * the per-scene images start (nothing spent if short).
+ */
+export async function validateCharacters(storyId: string): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "characters") return getStory(storyId);
+
+  const scenes = await loadScenes(db, storyId);
+  const cast = await loadCast(db, storyId);
+  const missing = cast.filter((c) => c.referenceImages.length === 0 && !c.portraitJobId);
+  if (missing.length > 0) {
+    throw new ApiJobError(
+      "casting_incomplete",
+      `Every cast member needs a reference photo or generated portrait before filming: ${missing.map((m) => m.name).join(", ")}.`,
+      { status: 409 },
+    );
+  }
+
+  const imageCost = scenes.length * IMAGE_COST_CREDITS;
+  const available = await getDisplayCredits();
+  if (available < imageCost) {
+    throw new ApiJobError(
+      "insufficient_credits",
+      `Not enough credits for the storyboard: ${imageCost} needed, ${Math.floor(available)} available. Add credits in Settings → Credits.`,
+      { status: 402 },
+    );
+  }
+
+  const template = getTemplate(story.template_id);
+  const location = getLocation(story.location_id, template);
+  await updateStory(db, storyId, {
+    status: "storyboard",
+    current_step: "storyboard",
+    progress_label: "Storyboarding scene 1…",
+  });
+  const running = { ...story, status: "storyboard" as const };
+  await Promise.all(
+    scenes.map((scene) =>
+      submitSceneImage(running.owner_key ?? "", db, storyId, scene, running, template, location),
+    ),
+  );
+  return getStory(storyId);
+}
+
 async function submitSceneImage(
   owner: string,
   db: D1Database | null,
@@ -713,14 +1044,27 @@ async function submitSceneImage(
   try {
     const selfie: StoredRef | null = story.selfie_ref ? JSON.parse(story.selfie_ref) : null;
     const reference: StoredRef | null = story.reference_ref ? JSON.parse(story.reference_ref) : null;
-    const images = [selfie?.ref, reference?.ref].filter((ref): ref is MediaRef => Boolean(ref));
+
+    // Lot C: scene references = the cast for this scene, then the user's
+    // selfie (if no protagonist inherited it), then the product/logo ref.
+    const cast = await loadCast(db, storyId);
+    const sceneCast = castForScene(cast, scene.idx);
+    const seen = new Set(sceneCast.refs.map((r) => r.id).filter(Boolean));
+    const images: GenerationMediaRef[] = [...sceneCast.refs];
+    if (selfie?.ref && !seen.has(selfie.ref.id)) images.push(selfie.ref as GenerationMediaRef);
+    if (reference?.ref) images.push(reference.ref as GenerationMediaRef);
+
+    const castLine = sceneCast.lines.length
+      ? `Cast on screen: ${sceneCast.lines.join("; ")}. Keep every cast member's face, wardrobe and identity consistent with the reference photos.`
+      : "Keep the same person's face, wardrobe and identity consistent with the reference photo.";
 
     const instruction = [
       `Cinematic still frame for a ${template.title} short film.`,
       `Setting: ${location.description}.`,
       scene.description,
       scene.camera ? `Camera: ${scene.camera}.` : "",
-      "Photoreal, color-graded, professional cinematography. Keep the same person's face, wardrobe and identity consistent with the reference photo.",
+      castLine,
+      "Photoreal, color-graded, professional cinematography.",
     ]
       .filter(Boolean)
       .join(" ");
@@ -782,6 +1126,15 @@ async function updateStory(
 
 /** Max polls before a missing job is treated as permanently lost (no infinite spinner). */
 const MAX_JOB_POLLS = 6;
+
+function tryParseJson<T>(str: string | null | undefined, fallback: T): T {
+  if (!str) return fallback;
+  try {
+    return JSON.parse(str) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 /** Best-effort display-credit balance; fail-open so a wallet API change never blocks a story. */
 async function getDisplayCredits(): Promise<number> {
@@ -983,6 +1336,11 @@ async function resolveStory(
   }
   advancingStories.add(story.id);
   try {
+    // Lot C: resolve any generated portraits for the cast on every read, so
+    // finished portraits become reference photos without a special refresh.
+    if (story.status === "characters" || story.status === "storyboard") {
+      await pollCharacterPortraits(db, story.id);
+    }
     if (story.status === "storyboard") {
       scenes = await resolveStoryboard(db, story, scenes);
       return { story, scenes };

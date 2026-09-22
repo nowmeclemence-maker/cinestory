@@ -10,12 +10,19 @@ import { Loader } from "@higgsfield/quanta/loader";
 import { toast } from "@higgsfield/quanta/sonner";
 import {
   ArrowLeft, ArrowUp, ArrowDown, Plus, Trash2, Wand2, Check,
-  Clapperboard, Film, Camera, RefreshCw, Coins,
+  Clapperboard, Film, Camera, RefreshCw, Coins, UserRound, ImagePlus, Users,
 } from "lucide-react";
 import { AppShell } from "@/layouts/app-shell";
 import { StepBar } from "@/components/story/step-bar";
-import { getStoryFn, updateScriptFn, regenerateScriptFn, validateScriptFn, validateStoryboardFn, regenerateSceneImageFn } from "@/lib/story.functions";
+import {
+  getStoryFn, updateScriptFn, regenerateScriptFn, validateScriptFn, validateStoryboardFn,
+  regenerateSceneImageFn, listStoryCharactersFn, proposeCharactersFn, linkCharacterFn,
+  unlinkCharacterFn, generateCharacterPortraitFn, validateCharactersFn, addCharacterImageFn,
+  listLibraryCharactersFn,
+} from "@/lib/story.functions";
+import { uploadAsset } from "@/lib/fnf.browser";
 import type { StoryDTO, SceneDTO } from "@/lib/story-engine.server";
+import type { CastMemberDTO } from "@/lib/story-engine.server";
 import { sceneDurationSeconds, videoClipCostCredits } from "@/lib/story-templates";
 
 export const Route = createFileRoute("/workspace")({
@@ -42,6 +49,27 @@ function WorkspacePage() {
   const [regenerating, setRegenerating] = useState(false);
   const [stageError, setStageError] = useState<string | null>(null);
   const [regeneratingScene, setRegeneratingScene] = useState<string | null>(null);
+  const [castBusy, setCastBusy] = useState<string | null>(null);
+
+  const atCasting = story?.status === "characters";
+  const { data: cast = [] } = useQuery({
+    queryKey: ["workspace", storyId, "cast"],
+    queryFn: () => listStoryCharactersFn({ data: { storyId: storyId! } }),
+    enabled: !!storyId && atCasting,
+    refetchInterval: (query) => {
+      const c = query.state.data as CastMemberDTO[] | undefined;
+      if (c && c.some((member) => member.portraitJobId)) return 3000;
+      return false;
+    },
+  });
+  const { data: libraryCharacters = [] } = useQuery({
+    queryKey: ["characters", "library"],
+    queryFn: () => listLibraryCharactersFn(),
+    enabled: atCasting,
+  });
+  const availableCharacters = libraryCharacters.filter(
+    (candidate) => !cast.some((member) => member.characterId === candidate.id),
+  );
 
   const { data: story, isLoading } = useQuery({
     queryKey: ["workspace", storyId],
@@ -214,6 +242,108 @@ function WorkspacePage() {
     }
   };
 
+  const refreshCast = () => qc.invalidateQueries({ queryKey: ["workspace", storyId, "cast"] });
+
+  const handleProposeCast = async () => {
+    if (!story || story.status !== "characters") return;
+    setCastBusy("propose");
+    setStageError(null);
+    try {
+      await proposeCharactersFn({ data: { storyId: story.id } });
+      await refreshCast();
+      toast.success("Cast proposed — add photos or generate portraits");
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setCastBusy(null);
+    }
+  };
+
+  const handleLinkCharacter = async (characterId: string) => {
+    if (!story) return;
+    setCastBusy(characterId);
+    setStageError(null);
+    try {
+      await linkCharacterFn({ data: { storyId: story.id, characterId } });
+      await refreshCast();
+      toast.success("Character added to the cast");
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setCastBusy(null);
+    }
+  };
+
+  const handleUnlinkCharacter = async (characterId: string) => {
+    if (!story) return;
+    setCastBusy(characterId);
+    setStageError(null);
+    try {
+      await unlinkCharacterFn({ data: { storyId: story.id, characterId } });
+      await refreshCast();
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setCastBusy(null);
+    }
+  };
+
+  const handleGeneratePortrait = async (characterId: string) => {
+    if (!story) return;
+    setCastBusy(characterId);
+    setStageError(null);
+    try {
+      await generateCharacterPortraitFn({ data: { storyId: story.id, characterId } });
+      await refreshCast();
+      toast.success("Generating portrait…");
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setCastBusy(null);
+    }
+  };
+
+  const handleUploadPhoto = async (characterId: string, file: File) => {
+    if (!story) return;
+    setCastBusy(characterId);
+    setStageError(null);
+    try {
+      const uploaded = await uploadAsset(file);
+      await addCharacterImageFn({
+        data: { characterId, ref: uploaded.ref, src: uploaded.src },
+      });
+      await refreshCast();
+      toast.success("Photo added — the character will be consistent from this face");
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setCastBusy(null);
+    }
+  };
+
+  const handleValidateCharacters = async () => {
+    if (!story || story.status !== "characters") return;
+    setStageError(null);
+    setValidating(true);
+    try {
+      await validateCharactersFn({ data: { storyId: story.id } });
+      await invalidate();
+      toast.success("Casting validated — building the storyboard");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not validate the cast.";
+      setStageError(message);
+      toast.error(message);
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const getStageError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : "Something went wrong.";
+    setStageError(message);
+    toast.error(message);
+  };
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -275,6 +405,21 @@ function WorkspacePage() {
                 onSave={() => void handleSave()}
                 onValidate={() => void handleValidate()}
                 onRegenerate={() => void handleRegenerate()}
+              />
+            ) : story.status === "characters" ? (
+              <CastingView
+                story={story}
+                cast={cast}
+                availableCharacters={availableCharacters}
+                busy={castBusy}
+                validating={validating}
+                error={stageError}
+                onPropose={() => void handleProposeCast()}
+                onLink={(characterId) => void handleLinkCharacter(characterId)}
+                onUnlink={(characterId) => void handleUnlinkCharacter(characterId)}
+                onPortrait={(characterId) => void handleGeneratePortrait(characterId)}
+                onUploadPhoto={(characterId, file) => void handleUploadPhoto(characterId, file)}
+                onValidate={() => void handleValidateCharacters()}
               />
             ) : story.status === "storyboard" ? (
               <StoryboardView
@@ -428,6 +573,186 @@ function ScriptEditor({
           {editor.scenes.length} scene{editor.scenes.length === 1 ? "" : "s"} · production starts only after validation.
         </p>
       </div>
+    </div>
+  );
+}
+
+// ─── Casting (Lot C) ────────────────────────────────────────────────────────
+
+type LibraryCharacter = { id: string; name: string; role: string; appearance: string };
+
+function CastingView({
+  story, cast, availableCharacters, busy, validating, error,
+  onPropose, onLink, onUnlink, onPortrait, onUploadPhoto, onValidate,
+}: {
+  story: StoryDTO;
+  cast: CastMemberDTO[];
+  availableCharacters: LibraryCharacter[];
+  busy: string | null;
+  validating: boolean;
+  error: string | null;
+  onPropose: () => void;
+  onLink: (characterId: string) => void;
+  onUnlink: (characterId: string) => void;
+  onPortrait: (characterId: string) => void;
+  onUploadPhoto: (characterId: string, file: File) => void;
+  onValidate: () => void;
+}) {
+  const imageCost = story.sceneCount * 1.5;
+  const allHavePhotos = cast.length > 0 && cast.every((m) => m.hasReference || m.portraitJobId);
+  const canValidate = cast.length === 0 || allHavePhotos;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <Typography as="h2" variant="title-sm-semi-bold" color="primary">Cast</Typography>
+            <Typography as="p" variant="caption-sm-regular" color="secondary" className="mt-1">
+              Up to 3 characters · storyboard images cost ~{Math.round(imageCost)} credits · every cast member appears in every scene (per-scene casting arrives with Lot D).
+            </Typography>
+          </div>
+        </div>
+        {error && (
+          <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm text-red-500" role="alert">
+            {error}
+          </div>
+        )}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {cast.length === 0 && (
+            <Button variant="marketingPrimary" size="md" disabled={busy === "propose"} onClick={onPropose}>
+              {busy === "propose" ? <Loader size="xs" color="neutral" /> : <Icon as={Wand2} size="sm" />}
+              Propose cast with AI
+            </Button>
+          )}
+          {availableCharacters.length > 0 && cast.length < 3 && (
+            <select
+              aria-label="Add a character from your library"
+              className="rounded-lg border border-q-border-subtle bg-q-background-secondary px-3 py-2 text-sm text-q-text-primary"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) onLink(e.target.value);
+              }}
+            >
+              <option value="" disabled>Add from library…</option>
+              {availableCharacters.map((character) => (
+                <option key={character.id} value={character.id}>
+                  {character.name}{character.role ? ` — ${character.role}` : ""}
+                </option>
+              ))}
+            </select>
+          )}
+          {cast.length > 0 && (
+            <Button
+              variant="marketingPrimary"
+              size="md"
+              disabled={validating || !canValidate}
+              onClick={onValidate}
+            >
+              {validating ? <Loader size="xs" color="neutral" /> : <Icon as={Film} size="sm" />}
+              {cast.length === 0
+                ? `Validate cast & build storyboard (~${Math.round(imageCost)} credits)`
+                : allHavePhotos
+                  ? `Validate cast & build storyboard (~${Math.round(imageCost)} credits)`
+                  : "Waiting for all cast photos…"}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {cast.length === 0 ? (
+        <div className="flex h-48 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-q-border-subtle text-center">
+          <Users className="size-8 text-q-text-tertiary" />
+          <Typography as="p" variant="body-sm-regular" color="secondary">
+            Let the AI deduce the cast from your script, or add characters from your library.
+          </Typography>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {cast.map((member) => {
+            const isBusy = busy === member.characterId;
+            return (
+              <div key={member.characterId} className="overflow-hidden rounded-xl border border-q-border-subtle bg-q-background-secondary">
+                {member.portraitUrl ? (
+                  <img src={member.portraitUrl} alt={member.name} className="aspect-[3/4] w-full object-cover" />
+                ) : member.portraitJobId ? (
+                  <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-2 bg-q-background-secondary">
+                    <Loader size="sm" color="neutral" />
+                    <span className="text-xs text-q-text-secondary">Generating portrait…</span>
+                  </div>
+                ) : (
+                  <div className="flex aspect-[3/4] w-full items-center justify-center bg-q-background-secondary">
+                    <UserRound className="size-8 text-q-text-tertiary" />
+                  </div>
+                )}
+                <div className="space-y-2 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <Typography as="h3" variant="label-md-medium" color="primary" truncate>
+                        {member.name}
+                      </Typography>
+                      {member.role && (
+                        <Typography as="p" variant="caption-sm-regular" color="secondary" truncate>
+                          {member.role}
+                        </Typography>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${member.name} from the cast`}
+                      disabled={isBusy || validating}
+                      className="rounded p-1 text-q-text-secondary hover:bg-q-transparent-light-10 disabled:opacity-50"
+                      onClick={() => onUnlink(member.characterId)}
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                  {(member.appearance || member.clothing) && (
+                    <Typography as="p" variant="caption-sm-regular" color="secondary" className="line-clamp-2">
+                      {[member.appearance, member.clothing ? `wears ${member.clothing}` : ""].filter(Boolean).join(" · ")}
+                    </Typography>
+                  )}
+                  <div className="flex items-center gap-2 pt-1">
+                    {!member.hasReference && !member.portraitJobId && (
+                      <>
+                        <label className="cursor-pointer rounded-lg border border-q-border-subtle px-2.5 py-1.5 text-xs font-medium text-q-text-secondary hover:bg-q-transparent-light-10">
+                          <span className="flex items-center gap-1">
+                            {isBusy ? <Loader size="xs" color="neutral" /> : <Icon as={ImagePlus} size="sm" />}
+                            Add photo
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            disabled={isBusy || validating}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) onUploadPhoto(member.characterId, file);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                        <Button variant="tertiary" size="sm" disabled={isBusy || validating} onClick={() => onPortrait(member.characterId)}>
+                          {isBusy ? <Loader size="xs" color="neutral" /> : <Icon as={Wand2} size="sm" />}
+                          Generate portrait (1.5)
+                        </Button>
+                      </>
+                    )}
+                    {member.portraitJobId && (
+                      <span className="text-xs text-q-text-tertiary">Portrait queued…</span>
+                    )}
+                    {member.hasReference && !member.portraitJobId && (
+                      <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-500">
+                        Reference ready
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -3,11 +3,19 @@
  */
 import type { D1Database } from "@cloudflare/workers-types";
 import { ApiJobError } from "@higgsfield/fnf/errors";
+import type { MediaRef } from "@higgsfield/fnf/media";
 import { createServerFnf } from "../fnf.server";
+
+/** A persisted reference photo: provider-compatible ref + display URL. */
+export interface CharacterImage {
+  ref: MediaRef;
+  src: string;
+}
 
 export interface Character {
   id: string;
   name: string;
+  role: string;
   biography: string;
   appearance: string;
   personality: string;
@@ -16,8 +24,9 @@ export interface Character {
   age: string;
   ethnicity: string;
   relationships: string;
-  referenceImages: string[];
+  referenceImages: CharacterImage[];
   reusablePrompts: string;
+  portraitJobId: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -74,12 +83,12 @@ export async function createCharacter(data: Partial<Character>): Promise<Charact
   const id = crypto.randomUUID();
   await database
     .prepare(
-      `INSERT INTO characters (id, owner_key, name, biography, appearance, personality, clothing, voice_id, age, ethnicity, relationships, reference_images, reusable_prompts)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO characters (id, owner_key, name, role, biography, appearance, personality, clothing, voice_id, age, ethnicity, relationships, reference_images, reusable_prompts)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .bind(
-      id, owner, data.name ?? "New Character", data.biography ?? "",
-      data.appearance ?? "", data.personality ?? "", data.clothing ?? "",
+      id, owner, data.name ?? "New Character", data.role ?? "",
+      data.biography ?? "", data.appearance ?? "", data.personality ?? "", data.clothing ?? "",
       data.voiceId ?? "", data.age ?? "", data.ethnicity ?? "",
       data.relationships ?? "", JSON.stringify(data.referenceImages ?? []),
       data.reusablePrompts ?? "",
@@ -124,6 +133,7 @@ function mapRow(row: Record<string, unknown>): Character {
   return {
     id: row.id as string,
     name: row.name as string,
+    role: (row.role as string) ?? "",
     biography: (row.biography as string) ?? "",
     appearance: (row.appearance as string) ?? "",
     personality: (row.personality as string) ?? "",
@@ -132,8 +142,9 @@ function mapRow(row: Record<string, unknown>): Character {
     age: (row.age as string) ?? "",
     ethnicity: (row.ethnicity as string) ?? "",
     relationships: (row.relationships as string) ?? "",
-    referenceImages: tryParseJson(row.reference_images as string, []),
+    referenceImages: tryParseJson<CharacterImage[]>(row.reference_images as string, []),
     reusablePrompts: (row.reusable_prompts as string) ?? "",
+    portraitJobId: (row.portrait_job_id as string) ?? "",
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
