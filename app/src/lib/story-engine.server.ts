@@ -13,6 +13,7 @@ import {
   IMAGE_COST_CREDITS,
   sceneCountForDuration,
   sceneDurationSeconds,
+  STORY_LOCATIONS,
   videoClipCostCredits,
 } from "./story-templates";
 
@@ -35,6 +36,12 @@ export interface SceneDTO {
   imageUrl: string | null;
   videoUrl: string | null;
   error: string | null;
+  // Lot D: per-scene set / location
+  locationName: string | null;
+  locationDescription: string | null;
+  locationSource: string | null;
+  locationImage: string | null;
+  locationJobId: string | null;
 }
 
 export interface StoryDTO {
@@ -109,6 +116,12 @@ interface SceneRow {
   video_url: string | null;
   error: string | null;
   retry_count?: number;
+  // Lot D: per-scene set / location
+  location_name?: string | null;
+  location_description?: string | null;
+  location_ref?: string | null;
+  location_source?: string | null;
+  location_job_id?: string | null;
 }
 
 interface DevState {
@@ -194,6 +207,11 @@ function toDTO(story: StoryRow, scenes: SceneRow[], mediaBaseUrl: string): Story
         imageUrl: scene.image_url,
         videoUrl: scene.video_url,
         error: scene.error,
+        locationName: scene.location_name ?? null,
+        locationDescription: scene.location_description ?? null,
+        locationSource: scene.location_source ?? null,
+        locationImage: tryParseJson<StoredRef | null>(scene.location_ref, null)?.src ?? null,
+        locationJobId: scene.location_job_id ?? null,
       })),
   };
 }
@@ -995,13 +1013,181 @@ export async function validateCharacters(storyId: string): Promise<StoryDTO> {
   const { db, story } = await loadOwnedStory(storyId);
   if (story.status !== "characters") return getStory(storyId);
 
-  const scenes = await loadScenes(db, storyId);
   const cast = await loadCast(db, storyId);
   const missing = cast.filter((c) => c.referenceImages.length === 0 && !c.portraitJobId);
   if (missing.length > 0) {
     throw new ApiJobError(
       "casting_incomplete",
       `Every cast member needs a reference photo or generated portrait before filming: ${missing.map((m) => m.name).join(", ")}.`,
+      { status: 409 },
+    );
+  }
+
+  // Lot D: casting validated → the Locations (sets) step. The storyboard
+  // balance check moved to validateLocations, the last gate before images.
+  await updateStory(db, storyId, {
+    status: "locations",
+    current_step: "locations",
+    progress_label: "Set the scenes…",
+  });
+  return getStory(storyId);
+}
+
+/**
+ * Lot D — the AI proposes one set per scene, deduced from the script and
+ * matched against the preset location gallery. Stored on each scene (free /
+ * proposed); the user can swap any scene to a preset, free text, photo or
+ * generated set before validating.
+ */
+export async function proposeLocations(storyId: string): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "locations") {
+    throw new ApiJobError("locations_locked", "Sets can only be proposed at the Locations step.", { status: 409 });
+  }
+  const scenes = await loadScenes(db, storyId);
+
+  const presets = STORY_LOCATIONS.map((l) => `${l.id}: ${l.title} — ${l.description}`).join("\n");
+  const llm = createLlmClient({ baseUrl: "https://fnf.internal/llm" });
+  const [model] = await llm.listModels();
+  if (!model) throw new ApiJobError("llm_unavailable", "No script-writing model is currently available.");
+
+  const system = [
+    "You are the set designer for CineStory, an AI cinematic short-video studio.",
+    "For EVERY scene of the script choose one set/location: either one of the presets below (use its exact title) or a fitting free description.",
+    `Preset locations:\n${presets}`,
+    "Respond with ONLY strict JSON, no markdown fences, one object per scene in script order:",
+    '[{"name": string, "description": string}]',
+    "name: the place (e.g. \"NYC rooftop\", \"Neo-Tokyo alley\"). description: 1-2 concrete cinematic sentences usable as a generation setting (space, light, time of day, mood).",
+  ].join("\n");
+
+  const res = await llm.complete({
+    model,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: `Idea: ${story.idea}\n\nScript: ${story.script_json ?? ""}` },
+    ],
+  });
+  const parsed = extractJson(String(res.content ?? "")) as Array<Record<string, unknown>>;
+  const proposals = Array.isArray(parsed) ? parsed : [];
+  if (proposals.length === 0) {
+    throw new ApiJobError("locations_invalid", "The set designer returned no locations.", { status: 502 });
+  }
+
+  for (let i = 0; i < scenes.length; i++) {
+    const proposal = proposals[i] ?? proposals[0];
+    await updateScene(db, storyId, scenes[i].id, {
+      location_name: String(proposal?.name ?? `Set ${i + 1}`).slice(0, 120),
+      location_description: String(proposal?.description ?? "").slice(0, 600),
+      location_source: "proposed",
+    });
+  }
+  await updateStory(db, storyId, { progress_label: "Sets proposed — adjust any scene, then validate." });
+  return getStory(storyId);
+}
+
+/** Lot D — set one scene's set: preset | free | photo (with an optional ref). */
+export async function setSceneLocation(
+  storyId: string,
+  sceneId: string,
+  input: {
+    name: string;
+    description: string;
+    source: "preset" | "free" | "photo" | "proposed";
+    ref?: { ref: MediaRef; src: string } | null;
+  },
+): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "locations") {
+    throw new ApiJobError("locations_locked", "Sets can only be edited at the Locations step.", { status: 409 });
+  }
+  const scenes = await loadScenes(db, storyId);
+  if (!scenes.some((s) => s.id === sceneId)) {
+    throw new ApiJobError("scene_not_found", "Scene not found.", { status: 404 });
+  }
+  if (!input.description?.trim()) {
+    throw new ApiJobError("location_missing", "Every scene needs a set description.", { status: 400 });
+  }
+  await updateScene(db, storyId, sceneId, {
+    location_name: input.name?.trim() ? input.name.trim().slice(0, 120) : "Set",
+    location_description: input.description.trim().slice(0, 600),
+    location_source: input.source,
+    ...(input.ref && input.ref.ref?.id
+      ? { location_ref: JSON.stringify({ ref: input.ref.ref, src: input.ref.src }) }
+      : {}),
+  });
+  return getStory(storyId);
+}
+
+/**
+ * Lot D — generate a set image for one scene from its location description
+ * (1.5 credits). Runs async; pollSceneLocations (called on every story read)
+ * stores the finished image as the scene's location reference.
+ */
+export async function generateSceneLocation(storyId: string, sceneId: string): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "locations") {
+    throw new ApiJobError("locations_locked", "Sets can only be edited at the Locations step.", { status: 409 });
+  }
+  const scenes = await loadScenes(db, storyId);
+  const scene = scenes.find((s) => s.id === sceneId);
+  if (!scene) throw new ApiJobError("scene_not_found", "Scene not found.", { status: 404 });
+  const description = scene.location_description ?? getLocation(story.location_id, getTemplate(story.template_id)).description;
+
+  const instruction = `Dark-free cinematic 9:16 establishing shot of the set, NO people or characters: ${description}. Consistent location for a ${getTemplate(story.template_id).title} short film.`;
+  const job = await getGenerationProvider().submitSceneImage({
+    instruction,
+    references: [],
+    aspectRatio: SCENE_ASPECT_RATIO,
+  });
+  await updateScene(db, storyId, sceneId, { location_job_id: job.jobId });
+  return getStory(storyId);
+}
+
+/** Resolve finished set-image jobs into persistent location references. */
+async function pollSceneLocations(db: D1Database | null, storyId: string): Promise<void> {
+  if (!db) return;
+  const rows = await db
+    .prepare("SELECT id, location_description, location_job_id FROM story_scenes WHERE story_id = ? AND location_job_id IS NOT NULL")
+    .bind(storyId)
+    .all();
+  const provider = getGenerationProvider();
+  for (const row of rows.results ?? []) {
+    const job = await provider.getSceneJob(row.location_job_id as string).catch(() => null);
+    if (!job) continue;
+    if (job.phase === "failed") {
+      await db.prepare("UPDATE story_scenes SET location_job_id = NULL WHERE id = ?").bind(row.id).run();
+      continue;
+    }
+    if (job.phase !== "completed" || !job.rawUrl) continue;
+    try {
+      const bytes = new Uint8Array(await (await fetch(job.rawUrl)).arrayBuffer());
+      const uploaded = await provider.uploadReference({ source: bytes, filename: `set-${row.id}.png` });
+      if (!uploaded.ref) continue;
+      await db
+        .prepare("UPDATE story_scenes SET location_job_id = NULL, location_ref = ?, location_source = 'generated' WHERE id = ?")
+        .bind(JSON.stringify({ ref: uploaded.ref as unknown as MediaRef, src: uploaded.url ?? "" }), row.id)
+        .run();
+    } catch {
+      // transient fetch/upload failure — retry next poll
+    }
+  }
+}
+
+/**
+ * Lot D — the last gate before images: every scene needs a set description,
+ * then the storyboard cost is checked against the balance before the per-scene
+ * images start (nothing spent if short).
+ */
+export async function validateLocations(storyId: string): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "locations") return getStory(storyId);
+
+  const scenes = await loadScenes(db, storyId);
+  const missing = scenes.filter((s) => !(s.location_description ?? "").trim());
+  if (missing.length > 0) {
+    throw new ApiJobError(
+      "locations_incomplete",
+      `Every scene needs a set before filming. Missing: ${missing.map((s) => `Scene ${s.idx + 1}`).join(", ")}.`,
       { status: 409 },
     );
   }
@@ -1058,9 +1244,23 @@ async function submitSceneImage(
       ? `Cast on screen: ${sceneCast.lines.join("; ")}. Keep every cast member's face, wardrobe and identity consistent with the reference photos.`
       : "Keep the same person's face, wardrobe and identity consistent with the reference photo.";
 
+    // Lot D: the scene's own set overrides the template default, and a set
+    // reference photo (uploaded or generated) is passed to the image model.
+    const sceneLocationName = scene.location_name?.trim();
+    const sceneLocationDescription = scene.location_description?.trim() || location.description;
+    const sceneLocationRef = scene.location_ref
+      ? (tryParseJson<StoredRef | null>(scene.location_ref, null) ?? null)
+      : null;
+    const locationLine = sceneLocationName
+      ? `Setting (${sceneLocationName}): ${sceneLocationDescription}.`
+      : `Setting: ${sceneLocationDescription}.`;
+    if (sceneLocationRef?.ref?.id && !seen.has(sceneLocationRef.ref.id)) {
+      images.push(sceneLocationRef.ref as GenerationMediaRef);
+    }
+
     const instruction = [
       `Cinematic still frame for a ${template.title} short film.`,
-      `Setting: ${location.description}.`,
+      locationLine,
       scene.description,
       scene.camera ? `Camera: ${scene.camera}.` : "",
       castLine,
@@ -1336,10 +1536,10 @@ async function resolveStory(
   }
   advancingStories.add(story.id);
   try {
-    // Lot C: resolve any generated portraits for the cast on every read, so
-    // finished portraits become reference photos without a special refresh.
-    if (story.status === "characters" || story.status === "storyboard") {
+    // Lot C + D: resolve any generated portraits and set images on every read.
+    if (story.status === "characters" || story.status === "storyboard" || story.status === "locations") {
       await pollCharacterPortraits(db, story.id);
+      await pollSceneLocations(db, story.id);
     }
     if (story.status === "storyboard") {
       scenes = await resolveStoryboard(db, story, scenes);

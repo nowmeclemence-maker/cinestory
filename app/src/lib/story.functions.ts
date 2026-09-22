@@ -3,16 +3,20 @@ import { z } from "zod";
 import {
   createStory,
   generateCharacterPortrait,
+  generateSceneLocation,
   getStory,
   linkCharacter,
   listStories,
   listStoryCharacters,
   proposeCharacters,
+  proposeLocations,
   regenerateSceneImage,
   regenerateScript,
+  setSceneLocation,
   unlinkCharacter,
   updateScript,
   validateCharacters,
+  validateLocations,
   validateScript,
   validateStoryboard,
 } from "./story-engine.server";
@@ -162,3 +166,37 @@ export const listLibraryCharactersFn = createServerFn({ method: "POST" }).handle
   const { listCharacters } = await import("./services/characters");
   return listCharacters();
 });
+
+// ─── Lot D: per-scene sets/locations ─────────────────────────────────────────
+
+export const proposeLocationsFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1) }))
+  .handler(({ data }) => proposeLocations(data.storyId));
+
+export const setSceneLocationFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      storyId: z.string().min(1),
+      sceneId: z.string().min(1),
+      name: z.string().max(120),
+      description: z.string().max(600),
+      source: z.enum(["preset", "free", "photo", "proposed"]),
+      ref: z.object({ ref: z.any(), src: z.string() }).nullable().optional(),
+    }),
+  )
+  .handler(({ data }) =>
+    setSceneLocation(data.storyId, data.sceneId, {
+      name: data.name,
+      description: data.description,
+      source: data.source,
+      ref: data.ref ?? undefined,
+    }),
+  );
+
+export const generateSceneLocationFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1), sceneId: z.string().min(1) }))
+  .handler(({ data }) => generateSceneLocation(data.storyId, data.sceneId));
+
+export const validateLocationsFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1) }))
+  .handler(({ data }) => validateLocations(data.storyId));

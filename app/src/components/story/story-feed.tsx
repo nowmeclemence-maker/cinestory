@@ -112,6 +112,24 @@ export function StoryTile({
     );
   }
 
+  if (story.status === "locations") {
+    // Sets step: awaiting one set per scene before any image is spent.
+    const setCount = story.scenes.filter((s) => (s.locationDescription ?? "").trim()).length;
+    return (
+      <div className="relative flex aspect-[9/16] w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-lg border border-q-border-subtle bg-q-background-secondary p-4 text-center">
+        <StepChip story={story} />
+        <div className="flex size-12 items-center justify-center rounded-xl bg-q-brand-primary/10">
+          <IconClapperboard className="size-6 text-q-brand-primary" />
+        </div>
+        <p className="line-clamp-2 text-sm font-medium text-q-text-primary">{story.title ?? story.idea}</p>
+        <p className="text-xs text-q-text-tertiary">{setCount} of {story.sceneCount} sets · storyboard ~{Math.round(story.sceneCount * 1.5)} credits</p>
+        <a href={`/workspace?story=${story.id}`} className="mt-1">
+          <Button variant="marketingPrimary" size="sm">Pick the sets</Button>
+        </a>
+      </div>
+    );
+  }
+
   if (story.status === "storyboard") {
     // Storyboard step: images are generating / awaiting per-image validation.
     const storyboard = firstSceneImage(story);

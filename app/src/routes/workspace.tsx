@@ -18,12 +18,13 @@ import {
   getStoryFn, updateScriptFn, regenerateScriptFn, validateScriptFn, validateStoryboardFn,
   regenerateSceneImageFn, listStoryCharactersFn, proposeCharactersFn, linkCharacterFn,
   unlinkCharacterFn, generateCharacterPortraitFn, validateCharactersFn, addCharacterImageFn,
-  listLibraryCharactersFn,
+  listLibraryCharactersFn, proposeLocationsFn, setSceneLocationFn, generateSceneLocationFn,
+  validateLocationsFn,
 } from "@/lib/story.functions";
 import { uploadAsset } from "@/lib/fnf.browser";
 import type { StoryDTO, SceneDTO } from "@/lib/story-engine.server";
 import type { CastMemberDTO } from "@/lib/story-engine.server";
-import { sceneDurationSeconds, videoClipCostCredits } from "@/lib/story-templates";
+import { sceneDurationSeconds, STORY_LOCATIONS, videoClipCostCredits } from "@/lib/story-templates";
 
 export const Route = createFileRoute("/workspace")({
   component: WorkspacePage,
@@ -59,6 +60,10 @@ function WorkspacePage() {
       const s = query.state.data as StoryDTO | undefined;
       if (!s) return false;
       if (s.status === "generating" || s.status === "assembling") return 4000;
+      if (s.status === "locations") {
+        const pendingSet = s.scenes.some((scene) => scene.locationJobId);
+        return pendingSet ? 4000 : false;
+      }
       if (s.status === "storyboard") {
         const final = s.scenes.every((scene) => scene.status === "image_ready" || scene.status === "failed");
         return final ? false : 4000;
@@ -344,6 +349,98 @@ function WorkspacePage() {
     toast.error(message);
   };
 
+  const [setBusy, setSetBusy] = useState<string | null>(null);
+
+  const handleProposeLocations = async () => {
+    if (!story || story.status !== "locations") return;
+    setSetBusy("propose");
+    setStageError(null);
+    try {
+      await proposeLocationsFn({ data: { storyId: story.id } });
+      await invalidate();
+      toast.success("Sets proposed — adjust any scene, then validate");
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setSetBusy(null);
+    }
+  };
+
+  const handleSetSceneLocation = async (
+    sceneId: string,
+    input: { name: string; description: string; source: "preset" | "free" | "photo"; ref?: { ref: unknown; src: string } },
+  ) => {
+    if (!story || story.status !== "locations") return;
+    setSetBusy(sceneId);
+    setStageError(null);
+    try {
+      await setSceneLocationFn({ data: { storyId: story.id, sceneId, ...input } });
+      await invalidate();
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setSetBusy(null);
+    }
+  };
+
+  const handleGenerateSetImage = async (sceneId: string) => {
+    if (!story || story.status !== "locations") return;
+    setSetBusy(sceneId);
+    setStageError(null);
+    try {
+      await generateSceneLocationFn({ data: { storyId: story.id, sceneId } });
+      await invalidate();
+      toast.success("Generating set image…");
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setSetBusy(null);
+    }
+  };
+
+  const handleUploadSetPhoto = async (sceneId: string, file: File) => {
+    if (!story || story.status !== "locations") return;
+    setSetBusy(sceneId);
+    setStageError(null);
+    try {
+      const uploaded = await uploadAsset(file);
+      const scene = story.scenes.find((scene) => scene.id === sceneId);
+      await setSceneLocationFn({
+        data: {
+          storyId: story.id,
+          sceneId,
+          name: scene?.locationName ?? "Custom set",
+          description: scene?.locationDescription ?? "",
+          source: "photo",
+          ref: { ref: uploaded.ref, src: uploaded.src },
+        },
+      });
+      await invalidate();
+      toast.success("Set photo added");
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setSetBusy(null);
+    }
+  };
+
+  const handleValidateLocations = async () => {
+    if (!story || story.status !== "locations") return;
+    setStageError(null);
+    setValidating(true);
+    try {
+      await validateLocationsFn({ data: { storyId: story.id } });
+      await invalidate();
+      toast.success("Sets validated — building the storyboard");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not validate the sets.";
+      setStageError(message);
+      toast.error(message);
+    } finally {
+      setValidating(false);
+    }
+  };
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -420,6 +517,27 @@ function WorkspacePage() {
                 onPortrait={(characterId) => void handleGeneratePortrait(characterId)}
                 onUploadPhoto={(characterId, file) => void handleUploadPhoto(characterId, file)}
                 onValidate={() => void handleValidateCharacters()}
+              />
+            ) : story.status === "locations" ? (
+              <LocationsView
+                story={story}
+                busy={setBusy}
+                validating={validating}
+                error={stageError}
+                onPropose={() => void handleProposeLocations()}
+                onSetPreset={(sceneId, preset) =>
+                  void handleSetSceneLocation(sceneId, {
+                    name: preset.title,
+                    description: preset.description,
+                    source: "preset",
+                  })
+                }
+                onSetFree={(sceneId, name, description) =>
+                  void handleSetSceneLocation(sceneId, { name, description, source: "free" })
+                }
+                onGenerateSet={(sceneId) => void handleGenerateSetImage(sceneId)}
+                onUploadSetPhoto={(sceneId, file) => void handleUploadSetPhoto(sceneId, file)}
+                onValidate={() => void handleValidateLocations()}
               />
             ) : story.status === "storyboard" ? (
               <StoryboardView
@@ -572,6 +690,174 @@ function ScriptEditor({
         <p className="mt-2 text-right text-xs text-q-text-tertiary">
           {editor.scenes.length} scene{editor.scenes.length === 1 ? "" : "s"} · production starts only after validation.
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Sets & locations (Lot D) ───────────────────────────────────────────────
+
+function LocationsView({
+  story, busy, validating, error,
+  onPropose, onSetPreset, onSetFree, onGenerateSet, onUploadSetPhoto, onValidate,
+}: {
+  story: StoryDTO;
+  busy: string | null;
+  validating: boolean;
+  error: string | null;
+  onPropose: () => void;
+  onSetPreset: (sceneId: string, preset: { id: string; title: string; description: string }) => void;
+  onSetFree: (sceneId: string, name: string, description: string) => void;
+  onGenerateSet: (sceneId: string) => void;
+  onUploadSetPhoto: (sceneId: string, file: File) => void;
+  onValidate: () => void;
+}) {
+  const imageCost = story.sceneCount * 1.5;
+  const anySet = story.scenes.some((scene) => (scene.locationDescription ?? "").trim());
+  const allSet = story.scenes.length > 0 && story.scenes.every((scene) => (scene.locationDescription ?? "").trim());
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <Typography as="h2" variant="title-sm-semi-bold" color="primary">Sets & locations</Typography>
+            <Typography as="p" variant="caption-sm-regular" color="secondary" className="mt-1">
+              One set per scene — preset, free description, your photo, or AI-generated (1.5 credits). Storyboard images cost ~{Math.round(imageCost)} credits.
+            </Typography>
+          </div>
+        </div>
+        {error && (
+          <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm text-red-500" role="alert">
+            {error}
+          </div>
+        )}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {!anySet && (
+            <Button variant="marketingPrimary" size="md" disabled={busy === "propose"} onClick={onPropose}>
+              {busy === "propose" ? <Loader size="xs" color="neutral" /> : <Icon as={Wand2} size="sm" />}
+              Propose sets with AI
+            </Button>
+          )}
+          {anySet && (
+            <Button variant="marketingPrimary" size="md" disabled={validating || !allSet} onClick={onValidate}>
+              {validating ? <Loader size="xs" color="neutral" /> : <Icon as={Film} size="sm" />}
+              {allSet ? `Validate sets & build storyboard (~${Math.round(imageCost)} credits)` : "Waiting for every scene's set…"}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {story.scenes.map((scene) => {
+          const isBusy = busy === scene.id;
+          const hasDescription = (scene.locationDescription ?? "").trim().length > 0;
+          return (
+            <div key={scene.id} className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Typography as="h3" variant="label-md-medium" color="primary">Scene {scene.idx + 1}</Typography>
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] ${
+                    hasDescription ? "bg-emerald-500/10 text-emerald-500" : "bg-q-transparent-light-10 text-q-text-tertiary"
+                  }`}>
+                    {hasDescription ? "Set set" : "No set"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {scene.locationJobId ? (
+                    <span className="flex items-center gap-1.5 text-xs text-q-text-secondary">
+                      <Loader size="xs" color="neutral" /> Generating set image…
+                    </span>
+                  ) : scene.locationImage ? (
+                    <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-500">Reference ready</span>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-xs text-q-text-tertiary" htmlFor={`preset-${scene.id}`}>Pick a preset</label>
+                  <select
+                    id={`preset-${scene.id}`}
+                    aria-label={`Preset set for scene ${scene.idx + 1}`}
+                    className="w-full rounded-lg border border-q-border-subtle bg-q-background-secondary px-3 py-2 text-sm text-q-text-primary"
+                    value=""
+                    disabled={isBusy || validating}
+                    onChange={(e) => {
+                      const preset = STORY_LOCATIONS.find((p) => p.id === e.target.value);
+                      if (preset) onSetPreset(scene.id, preset);
+                    }}
+                  >
+                    <option value="" disabled>Choose a preset…</option>
+                    {STORY_LOCATIONS.map((preset) => (
+                      <option key={preset.id} value={preset.id}>{preset.title}</option>
+                    ))}
+                  </select>
+                  <div className="flex items-center gap-2">
+                    {scene.locationImage ? (
+                      <img src={scene.locationImage} alt={`Set for scene ${scene.idx + 1}`} className="h-20 w-14 rounded object-cover" />
+                    ) : (
+                      <div className="flex h-20 w-14 items-center justify-center rounded bg-q-background-primary">
+                        <ImagePlus className="size-5 text-q-text-tertiary" />
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="cursor-pointer rounded-lg border border-q-border-subtle px-2.5 py-1.5 text-xs font-medium text-q-text-secondary hover:bg-q-transparent-light-10">
+                        Upload photo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={isBusy || validating}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) onUploadSetPhoto(scene.id, file);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                      <Button variant="tertiary" size="sm" disabled={isBusy || validating} onClick={() => onGenerateSet(scene.id)}>
+                        {isBusy ? <Loader size="xs" color="neutral" /> : <Icon as={Wand2} size="sm" />}
+                        Generate (1.5)
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor={`setname-${scene.id}`} className="text-xs text-q-text-tertiary">Set name</label>
+                  <input
+                    id={`setname-${scene.id}`}
+                    key={`name-${scene.id}-${scene.locationName}`}
+                    defaultValue={scene.locationName ?? ""}
+                    placeholder="e.g. NYC rooftop at night"
+                    disabled={isBusy || validating}
+                    className="w-full rounded-lg border border-q-border-subtle bg-q-background-secondary px-3 py-2 text-sm text-q-text-primary focus:border-q-border-focus focus:outline-none"
+                    onBlur={(e) => {
+                      if (e.target.value !== (scene.locationName ?? "")) {
+                        onSetFree(scene.id, e.target.value, scene.locationDescription ?? "");
+                      }
+                    }}
+                  />
+                  <label htmlFor={`setdesc-${scene.id}`} className="text-xs text-q-text-tertiary">Set description</label>
+                  <textarea
+                    id={`setdesc-${scene.id}`}
+                    key={`desc-${scene.id}-${scene.locationDescription}`}
+                    defaultValue={scene.locationDescription ?? ""}
+                    placeholder="Concrete cinematic setting (space, light, time, mood)."
+                    disabled={isBusy || validating}
+                    rows={3}
+                    className="w-full rounded-lg border border-q-border-subtle bg-q-background-secondary px-3 py-2 text-sm text-q-text-primary focus:border-q-border-focus focus:outline-none"
+                    onBlur={(e) => {
+                      if (e.target.value !== (scene.locationDescription ?? "")) {
+                        onSetFree(scene.id, scene.locationName ?? "", e.target.value);
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
