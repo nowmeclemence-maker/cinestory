@@ -212,6 +212,38 @@ export const DEFAULT_DURATION_SECONDS = 30;
 const SECONDS_PER_SCENE = 6;
 const MAX_SCENES = 14;
 
+/**
+ * The 8-step production journey (MVP v2 spec). A story advances step by step,
+ * only when the user validates the current one — the engine never chains past
+ * a step on its own. current_step on a story names the step that is due.
+ */
+export interface StoryStep {
+  id: string;
+  label: string;
+}
+
+export const STORY_STEPS: StoryStep[] = [
+  { id: "idea", label: "Idea" },
+  { id: "script", label: "Script" },
+  { id: "characters", label: "Characters" },
+  { id: "locations", label: "Locations" },
+  { id: "storyboard", label: "Storyboard" },
+  { id: "video", label: "Video" },
+  { id: "audio", label: "Audio" },
+  { id: "assembly", label: "Final cut" },
+];
+
+/** Index of a step id in STORY_STEPS (-1 when unknown, e.g. legacy "old"). */
+export function stepIndex(stepId: string | undefined | null): number {
+  if (!stepId) return -1;
+  return STORY_STEPS.findIndex((s) => s.id === stepId);
+}
+
+export function stepLabel(stepId: string | undefined | null): string {
+  const idx = stepIndex(stepId);
+  return idx >= 0 ? STORY_STEPS[idx].label : "Old format";
+}
+
 export function getTemplate(id: string): StoryTemplate {
   return STORY_TEMPLATES.find((template) => template.id === id) ?? STORY_TEMPLATES[0];
 }

@@ -691,9 +691,8 @@ export function StudioTemplate() {
     if (!allowPersonalNavigation()) return;
     setSubmitError(null);
     setSubmitting(true);
-    const targetView = view.kind === "project" ? view : { kind: "all" as const };
     try {
-      await createStoryFn({
+      const created = await createStoryFn({
         data: {
           idea: prompt.trim(),
           templateId: selectedTemplate.id,
@@ -710,7 +709,9 @@ export function StudioTemplate() {
       });
       setPrompt("");
       await queryClient.invalidateQueries({ queryKey: ["cinestory", "stories", scopeKey] });
-      setView(targetView);
+      // Lot A: a new story stops at the Script step — open the workspace so
+      // the user reviews/edits the script before anything is generated.
+      window.location.href = `/workspace?story=${created.id}`;
     } catch (error) {
       setSubmitError(
         error instanceof Error ? error.message : "CineStory could not start this story.",

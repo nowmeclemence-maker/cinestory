@@ -1,34 +1,44 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Typography } from "@higgsfield/quanta/typography";
 import { Button } from "@higgsfield/quanta/button";
 import { Icon } from "@higgsfield/quanta/icon";
+import { Input } from "@higgsfield/quanta/input";
 import { Textarea } from "@higgsfield/quanta/textarea";
-import { Tabs } from "@higgsfield/quanta/tabs";
-import { Card } from "@higgsfield/quanta/card";
 import { Loader } from "@higgsfield/quanta/loader";
-import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
-import { getStory } from "@/lib/story-engine.server";
-import type { StoryDTO, SceneDTO } from "@/lib/story-engine.server";
+import { toast } from "@higgsfield/quanta/sonner";
+import {
+  ArrowLeft, ArrowUp, ArrowDown, Plus, Trash2, Wand2, Check,
+  Clapperboard, Film, Camera,
+} from "lucide-react";
 import { AppShell } from "@/layouts/app-shell";
-import { useQueryClient } from "@tanstack/react-query";
-import { Clapperboard, FileText, Camera, Mic, Wand2, Eye } from "lucide-react";
+import { StepBar } from "@/components/story/step-bar";
+import { getStoryFn, updateScriptFn, regenerateScriptFn, validateScriptFn } from "@/lib/story.functions";
+import type { StoryDTO, SceneDTO } from "@/lib/story-engine.server";
 
 export const Route = createFileRoute("/workspace")({
   component: WorkspacePage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    story: typeof search.story === "string" ? search.story : undefined,
+  }),
 });
 
-const getStoryFn = createServerFn({ method: "POST" })
-  .validator(z.object({ storyId: z.string().min(1) }))
-  .handler(({ data }) => getStory(data.storyId));
+interface SceneEdit {
+  id: string;
+  description: string;
+  camera: string;
+  dialogue: string;
+  onScreenText: string;
+}
 
 function WorkspacePage() {
+  const { story: storyId } = Route.useSearch();
   const qc = useQueryClient();
-  const [storyId, setStoryId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("script");
-  const [scenes, setScenes] = useState<SceneDTO[]>([]);
+  const [editor, setEditor] = useState<{ title: string; hook: string; cta: string; scenes: SceneEdit[] } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const { data: story, isLoading } = useQuery({
     queryKey: ["workspace", storyId],
@@ -41,168 +51,430 @@ function WorkspacePage() {
     },
   });
 
-  // Load a story from URL params or default
-  const handleLoadStory = async (id: string) => {
-    setStoryId(id);
-    const s = await getStoryFn({ data: { storyId: id } });
-    setScenes(s.scenes);
+  // Load draft content into the editor once the story lands in the Script step.
+  useEffect(() => {
+    if (!story || story.status !== "draft") {
+      setEditor(null);
+      return;
+    }
+    setEditor({
+      title: story.title ?? "",
+      hook: story.hook ?? "",
+      cta: story.cta ?? "",
+      scenes: story.scenes.map((scene) => ({
+        id: scene.id,
+        description: scene.description,
+        camera: scene.camera ?? "",
+        dialogue: scene.dialogue ?? "",
+        onScreenText: scene.onScreenText ?? "",
+      })),
+    });
+  }, [story?.id, story?.status]);
+
+  const sceneCount = useMemo(
+    () => (story && story.status === "draft" ? (editor?.scenes.length ?? story.sceneCount) : story?.sceneCount ?? 0),
+    [editor, story],
+  );
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["workspace", storyId] });
+
+  const patchScene = (idx: number, patch: Partial<SceneEdit>) => {
+    setEditor((current) => {
+      if (!current) return current;
+      const scenes = current.scenes.map((scene, i) => (i === idx ? { ...scene, ...patch } : scene));
+      return { ...current, scenes };
+    });
   };
 
-  const updateScene = (idx: number, patch: Partial<SceneDTO>) => {
-    setScenes((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+  const addScene = () => {
+    setEditor((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        scenes: [...current.scenes, { id: `local-${Date.now()}`, description: "", camera: "slow push in", dialogue: "", onScreenText: "" }],
+      };
+    });
+  };
+
+  const removeScene = (idx: number) => {
+    setEditor((current) => {
+      if (!current) return current;
+      return { ...current, scenes: current.scenes.filter((_, i) => i !== idx) };
+    });
+  };
+
+  const moveScene = (idx: number, dir: -1 | 1) => {
+    setEditor((current) => {
+      if (!current) return current;
+      const scenes = [...current.scenes];
+      const target = idx + dir;
+      if (target < 0 || target >= scenes.length) return current;
+      [scenes[idx], scenes[target]] = [scenes[target], scenes[idx]];
+      return { ...current, scenes };
+    });
+  };
+
+  const handleSave = async () => {
+    if (!story || !editor || editor.scenes.length === 0) return;
+    setSaving(true);
+    try {
+      await updateScriptFn({
+        data: {
+          storyId: story.id,
+          title: editor.title.trim() || "Untitled story",
+          hook: editor.hook,
+          cta: editor.cta,
+          scenes: editor.scenes.map((scene, idx) => ({
+            idx,
+            description: scene.description,
+            camera: scene.camera,
+            dialogue: scene.dialogue,
+            onScreenText: scene.onScreenText,
+          })),
+        },
+      });
+      await invalidate();
+      toast.success("Script saved");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save the script.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleValidate = async () => {
+    if (!story) return;
+    if (story.status === "draft") await handleSave();
+    setValidating(true);
+    try {
+      await validateScriptFn({ data: { storyId: story.id } });
+      await invalidate();
+      toast.success("Script validated — launching production");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not validate the script.");
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const handleRegenerate = async () => {
+    if (!story || story.status !== "draft") return;
+    if (!confirm("Rewrite the whole script with AI? Your edits will be replaced.")) return;
+    setRegenerating(true);
+    try {
+      await regenerateScriptFn({ data: { storyId: story.id } });
+      await invalidate();
+      toast.success("Script regenerated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not regenerate the script.");
+    } finally {
+      setRegenerating(false);
+    }
   };
 
   return (
     <AppShell>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <Typography as="h1" variant="title-lg-semi-bold" color="primary">
-              Story Workspace
-            </Typography>
-            <Typography as="p" variant="body-sm-regular" color="secondary" className="mt-1">
-              Write, organize, and refine your story before generating.
-            </Typography>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="tertiary" onClick={() => window.location.href = "/"}>
-              <Icon as={Clapperboard} size="sm" /> Open Studio
-            </Button>
-          </div>
-        </div>
-
         {!storyId ? (
-          /* Empty state — pick a story */
           <div className="flex h-64 flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-q-border-subtle p-8 text-center">
-            <FileText className="size-12 text-q-text-tertiary" />
+            <Clapperboard className="size-10 text-q-text-tertiary" />
             <Typography as="p" variant="body-md-regular" color="secondary">
-              Select a story from the Dashboard to edit it here.
+              Pick a story to work on.
             </Typography>
-            <Button variant="primary" onClick={() => window.location.href = "/dashboard"}>
-              Go to Dashboard
-            </Button>
+            <a href="/dashboard">
+              <Button variant="primary">Go to Dashboard</Button>
+            </a>
           </div>
         ) : isLoading ? (
-          <div className="flex h-48 items-center justify-center"><Loader size="md" color="neutral" /></div>
+          <div className="flex h-48 items-center justify-center">
+            <Loader size="md" color="neutral" aria-label="Loading story" />
+          </div>
         ) : story ? (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            {/* Left: Story Info */}
-            <div className="lg:col-span-2 space-y-4">
-              <div className="rounded-lg border border-q-border-subtle bg-q-background-secondary p-4">
-                <Typography as="h2" variant="title-sm-semi-bold" color="primary">{story.title}</Typography>
-                <Typography as="p" variant="body-sm-regular" color="secondary" className="mt-1">{story.idea}</Typography>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="rounded-full bg-q-brand-primary/10 px-3 py-1 text-xs text-q-brand-primary">{story.templateTitle}</span>
-                  <span className="rounded-full bg-q-transparent-light-10 px-3 py-1 text-xs">{story.durationSec}s</span>
-                  <span className="rounded-full bg-q-transparent-light-10 px-3 py-1 text-xs">{story.status}</span>
+          <>
+            {/* Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <a href="/studio" aria-label="Back to stories" className="text-q-text-secondary hover:text-q-text-primary">
+                  <Icon as={ArrowLeft} size="md" />
+                </a>
+                <div>
+                  <Typography as="h1" variant="title-lg-semi-bold" color="primary">
+                    Story Workspace
+                  </Typography>
+                  <Typography as="p" variant="body-sm-regular" color="secondary" truncate>
+                    {story.title ?? story.idea} · {story.templateTitle} · ~{Math.round(story.estimatedCost)} credits
+                  </Typography>
                 </div>
               </div>
-
-              {/* Tabs: Script / Scenes / Preview */}
-              <Tabs.Root value={activeTab} onValueChange={(v) => setActiveTab(String(v))}>
-                <Tabs.List items={[
-                  { value: "script", label: "Script", start: <Icon as={FileText} size="sm" /> },
-                  { value: "scenes", label: "Scenes", start: <Icon as={Camera} size="sm" /> },
-                  { value: "preview", label: "Preview", start: <Icon as={Eye} size="sm" /> },
-                ]} />
-              </Tabs.Root>
-
-              {activeTab === "scenes" && (
-                <div className="space-y-3">
-                  {scenes.map((scene, idx) => (
-                    <Card key={scene.id} className="overflow-hidden">
-                      <div className="p-4">
-                        <div className="flex items-center justify-between">
-                          <Typography as="h3" variant="label-md-medium" color="primary">
-                            Scene {idx + 1}
-                          </Typography>
-                          <span className={`rounded-full px-2 py-0.5 text-xs ${
-                            scene.status === "ready" ? "bg-green-500/10 text-green-500" :
-                            scene.status === "failed" ? "bg-red-500/10 text-red-500" :
-                            "bg-q-transparent-light-10"
-                          }`}>{scene.status}</span>
-                        </div>
-                        <Textarea
-                          label="Description"
-                          value={scene.description}
-                          onChange={(e) => updateScene(idx, { description: e.target.value })}
-                          className="mt-2"
-                        />
-                        <div className="mt-2 grid grid-cols-2 gap-2">
-                          <Textarea label="Camera" value={scene.camera ?? ""} onChange={(e) => updateScene(idx, { camera: e.target.value })} />
-                          <Textarea label="Dialogue" value={scene.dialogue ?? ""} onChange={(e) => updateScene(idx, { dialogue: e.target.value })} />
-                        </div>
-                        {scene.imageUrl && (
-                          <img src={scene.imageUrl} alt={`Scene ${idx + 1}`} className="mt-2 h-32 w-full rounded object-cover" />
-                        )}
-                        {scene.videoUrl && (
-                          <video src={scene.videoUrl} controls className="mt-2 h-32 w-full rounded object-cover" />
-                        )}
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              )}
-
-              {activeTab === "script" && story && (
-                <div className="rounded-lg border border-q-border-subtle bg-q-background-secondary p-4">
-                  <Typography as="h3" variant="label-md-medium" color="primary">Story Hook</Typography>
-                  <Typography as="p" variant="body-sm-regular" color="secondary" className="mt-1">{story.hook}</Typography>
-                  <Typography as="h3" variant="label-md-medium" color="primary" className="mt-4">Call to Action</Typography>
-                  <Typography as="p" variant="body-sm-regular" color="secondary" className="mt-1">{story.cta}</Typography>
-                  <Typography as="h3" variant="label-md-medium" color="primary" className="mt-4">Music Mood</Typography>
-                  <Typography as="p" variant="body-sm-regular" color="secondary" className="mt-1">{story.musicMood}</Typography>
-                  <Typography as="h3" variant="label-md-medium" color="primary" className="mt-4">Color Grade</Typography>
-                  <Typography as="p" variant="body-sm-regular" color="secondary" className="mt-1">{story.colorGrade}</Typography>
-                </div>
-              )}
-
-              {activeTab === "preview" && story.finalVideoUrl && (
-                <div className="rounded-lg overflow-hidden border border-q-border-subtle">
-                  <video src={story.finalVideoUrl} controls className="w-full aspect-[9/16] max-h-[70vh] object-contain bg-black" poster={story.finalPosterUrl ?? undefined} />
-                </div>
-              )}
-              {activeTab === "preview" && !story.finalVideoUrl && (
-                <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-q-border-subtle">
-                  <Typography as="p" variant="body-sm-regular" color="secondary">Video not yet generated.</Typography>
-                </div>
+              {story.status === "ready" && story.finalVideoUrl && (
+                <a href="/studio">
+                  <Button variant="tertiary">Back to stories</Button>
+                </a>
               )}
             </div>
 
-            {/* Right: Timeline */}
-            <div className="space-y-4">
-              <Typography as="h2" variant="title-sm-semi-bold" color="primary">Production Timeline</Typography>
-              {[
-                { label: "Idea", status: "done", icon: FileText },
-                { label: "Story", status: "done", icon: FileText },
-                { label: "Characters", status: "done", icon: UsersIcon },
-                { label: "Locations", status: "done", icon: MapPinIcon },
-                { label: "Shots", status: story && story.scenes.every(s => s.status === "ready") ? "done" : story?.status === "generating" ? "active" : "pending", icon: Camera },
-                { label: "Generation", status: story?.status === "generating" ? "active" : story?.status === "ready" ? "done" : "pending", icon: Wand2 },
-                { label: "Assembly", status: story?.status === "assembling" ? "active" : story?.status === "ready" ? "done" : "pending", icon: Clapperboard },
-                { label: "Export", status: story?.status === "ready" ? "ready" : "pending", icon: DownloadIcon },
-              ].map((step) => (
-                <div key={step.label} className={`flex items-center gap-3 rounded-lg border p-3 ${
-                  step.status === "done" ? "border-green-500/30 bg-green-500/5" :
-                  step.status === "active" ? "border-q-brand-primary/30 bg-q-brand-primary/5" :
-                  "border-q-border-subtle bg-q-background-secondary"
-                }`}>
-                  <div className={`flex size-8 items-center justify-center rounded-full ${
-                    step.status === "done" ? "bg-green-500 text-white" :
-                    step.status === "active" ? "bg-q-brand-primary text-white" :
-                    "bg-q-transparent-light-10 text-q-text-tertiary"
-                  }`}>
-                    <Icon as={step.icon} size="sm" />
-                  </div>
-                  <Typography as="span" variant="label-md-medium" color="primary">{step.label}</Typography>
+            {/* Step bar */}
+            <StepBar currentStep={story.currentStep} />
+
+            {story.status === "draft" && editor ? (
+              <ScriptEditor
+                editor={editor}
+                sceneCount={sceneCount}
+                saving={saving}
+                validating={validating}
+                regenerating={regenerating}
+                onTitle={(title) => setEditor({ ...editor, title })}
+                onHook={(hook) => setEditor({ ...editor, hook })}
+                onCta={(cta) => setEditor({ ...editor, cta })}
+                onPatchScene={patchScene}
+                onAddScene={addScene}
+                onRemoveScene={removeScene}
+                onMoveScene={moveScene}
+                onSave={() => void handleSave()}
+                onValidate={() => void handleValidate()}
+                onRegenerate={() => void handleRegenerate()}
+              />
+            ) : story.status === "generating" || story.status === "assembling" ? (
+              <ProductionView story={story} />
+            ) : story.status === "ready" && story.finalVideoUrl ? (
+              <ReadyView story={story} />
+            ) : story.status === "failed" ? (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-6">
+                <Typography as="h3" variant="title-sm-semi-bold" color="danger">
+                  This story stopped
+                </Typography>
+                <Typography as="p" variant="body-sm-regular" color="secondary" className="mt-2">
+                  {story.error ?? "An unknown error happened during production."}
+                </Typography>
+                <div className="mt-4 flex gap-2">
+                  <a href="/studio"><Button variant="tertiary">Back to stories</Button></a>
+                  <a href={`/dashboard`}><Button variant="primary">Dashboard</Button></a>
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
+            ) : (
+              <div className="flex h-48 items-center justify-center">
+                <Loader size="md" color="neutral" />
+              </div>
+            )}
+          </>
         ) : null}
       </div>
     </AppShell>
   );
 }
 
-import { Users as UsersIcon, MapPin as MapPinIcon, Download as DownloadIcon } from "lucide-react";
+// ─── Script editor (Lot A) ──────────────────────────────────────────────────
+
+function ScriptEditor({
+  editor, sceneCount, saving, validating, regenerating,
+  onTitle, onHook, onCta, onPatchScene, onAddScene, onRemoveScene, onMoveScene,
+  onSave, onValidate, onRegenerate,
+}: {
+  editor: { title: string; hook: string; cta: string; scenes: SceneEdit[] };
+  sceneCount: number;
+  saving: boolean;
+  validating: boolean;
+  regenerating: boolean;
+  onTitle: (v: string) => void;
+  onHook: (v: string) => void;
+  onCta: (v: string) => void;
+  onPatchScene: (idx: number, patch: Partial<SceneEdit>) => void;
+  onAddScene: () => void;
+  onRemoveScene: (idx: number) => void;
+  onMoveScene: (idx: number, dir: -1 | 1) => void;
+  onSave: () => void;
+  onValidate: () => void;
+  onRegenerate: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      {/* Title + hook */}
+      <div className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Input label="Story title" value={editor.title} onChange={(e) => onTitle(e.target.value)} />
+          <Input label="Call to action (optional)" value={editor.cta} onChange={(e) => onCta(e.target.value)} />
+        </div>
+        <div className="mt-4">
+          <Textarea
+            label="Opening hook"
+            description="The first line the viewer hears or reads."
+            value={editor.hook}
+            onChange={(e) => onHook(e.target.value)}
+            className="min-h-[84px]"
+          />
+        </div>
+      </div>
+
+      {/* Scenes */}
+      <div className="flex items-center justify-between">
+        <Typography as="h2" variant="title-sm-semi-bold" color="primary">
+          Scenes ({sceneCount})
+        </Typography>
+        <Button variant="tertiary" size="sm" onClick={onAddScene}>
+          <Icon as={Plus} size="sm" /> Add scene
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        {editor.scenes.map((scene, idx) => (
+          <div key={scene.id} className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-4">
+            <div className="flex items-center justify-between">
+              <Typography as="h3" variant="label-md-medium" color="primary">
+                Scene {idx + 1}
+              </Typography>
+              <div className="flex items-center gap-1">
+                <button type="button" aria-label="Move scene up" className="rounded p-1 text-q-text-secondary hover:bg-q-transparent-light-10" onClick={() => onMoveScene(idx, -1)} disabled={idx === 0}>
+                  <Icon as={ArrowUp} size="sm" />
+                </button>
+                <button type="button" aria-label="Move scene down" className="rounded p-1 text-q-text-secondary hover:bg-q-transparent-light-10" onClick={() => onMoveScene(idx, 1)} disabled={idx === editor.scenes.length - 1}>
+                  <Icon as={ArrowDown} size="sm" />
+                </button>
+                <button type="button" aria-label="Delete scene" className="rounded p-1 text-q-text-danger hover:bg-q-transparent-light-10" onClick={() => onRemoveScene(idx)}>
+                  <Icon as={Trash2} size="sm" />
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 space-y-3">
+              <Textarea
+                label="What happens"
+                description="Visual description of the scene."
+                value={scene.description}
+                onChange={(e) => onPatchScene(idx, { description: e.target.value })}
+                className="min-h-[72px]"
+              />
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <Input label="Camera direction" value={scene.camera} onChange={(e) => onPatchScene(idx, { camera: e.target.value })} />
+                <Input label="On-screen text" value={scene.onScreenText} onChange={(e) => onPatchScene(idx, { onScreenText: e.target.value })} />
+              </div>
+              <Input label="Dialogue / narration" value={scene.dialogue} onChange={(e) => onPatchScene(idx, { dialogue: e.target.value })} />
+            </div>
+          </div>
+        ))}
+        {editor.scenes.length === 0 && (
+          <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-q-border-subtle text-q-text-tertiary">
+            No scenes yet — add one to start building the film.
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="sticky bottom-0 -mx-1 rounded-xl border border-q-border-subtle bg-q-background-primary/90 p-3 backdrop-blur-md">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button variant="tertiary" size="md" disabled={regenerating} onClick={onRegenerate}>
+            {regenerating ? <Loader size="xs" color="neutral" /> : <Icon as={Wand2} size="sm" />}
+            Regenerate with AI
+          </Button>
+          <Button variant="secondary" size="md" disabled={saving || editor.scenes.length === 0} onClick={onSave}>
+            {saving ? <Loader size="xs" color="neutral" /> : <Icon as={Check} size="sm" />}
+            Save
+          </Button>
+          <Button variant="marketingPrimary" size="md" disabled={validating || editor.scenes.length === 0 || !editor.title.trim()} onClick={onValidate}>
+            {validating ? <Loader size="xs" color="neutral" /> : <Icon as={Film} size="sm" />}
+            Validate script & start production
+          </Button>
+        </div>
+        <p className="mt-2 text-right text-xs text-q-text-tertiary">
+          {editor.scenes.length} scene{editor.scenes.length === 1 ? "" : "s"} · production starts only after validation.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Production progress ─────────────────────────────────────────────────────
+
+function ProductionView({ story }: { story: StoryDTO }) {
+  const done = story.scenes.filter((s) => s.status === "ready").length;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 rounded-xl border border-q-border-subtle bg-q-background-secondary p-4">
+        <Loader size="sm" color="neutral" />
+        <div className="flex-1">
+          <Typography as="p" variant="label-md-medium" color="primary">
+            {story.progressLabel ?? "Production running…"}
+          </Typography>
+          <Typography as="p" variant="caption-sm-regular" color="secondary">
+            {done} of {story.scenes.length} scenes finished
+          </Typography>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        {story.scenes.map((scene) => (
+          <SceneCard key={scene.id} scene={scene} idx={scene.idx} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SceneCard({ scene, idx }: { scene: SceneDTO; idx: number }) {
+  const media = scene.videoUrl ?? scene.imageUrl;
+  return (
+    <div className="overflow-hidden rounded-xl border border-q-border-subtle bg-q-background-secondary">
+      {media ? (
+        scene.videoUrl ? (
+          <video src={scene.videoUrl} className="aspect-[9/16] w-full object-cover" muted playsInline />
+        ) : (
+          <img src={media} alt={`Scene ${idx + 1}`} className="aspect-[9/16] w-full object-cover" />
+        )
+      ) : (
+        <div className="flex aspect-[9/16] w-full items-center justify-center bg-q-background-secondary">
+          <Camera className="size-6 text-q-text-tertiary" />
+        </div>
+      )}
+      <div className="flex items-center justify-between p-2.5">
+        <span className="text-xs font-medium text-q-text-primary">Scene {idx + 1}</span>
+        <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${
+          scene.status === "ready" ? "bg-emerald-500/10 text-emerald-500" :
+          scene.status === "failed" ? "bg-red-500/10 text-red-500" :
+          "bg-q-transparent-light-10 text-q-text-secondary"
+        }`}>
+          {scene.status === "ready" ? "Done" : scene.status === "failed" ? scene.error ?? "Failed" : scene.status}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Ready ───────────────────────────────────────────────────────────────────
+
+function ReadyView({ story }: { story: StoryDTO }) {
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="overflow-hidden rounded-xl border border-q-border-subtle lg:col-span-2">
+        <video
+          src={story.finalVideoUrl ?? undefined}
+          controls
+          playsInline
+          poster={story.finalPosterUrl ?? undefined}
+          className="aspect-[9/16] max-h-[70vh] w-full bg-black object-contain"
+        />
+      </div>
+      <div className="space-y-4">
+        <div className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-5">
+          <Typography as="h3" variant="title-sm-semi-bold" color="primary">
+            {story.title}
+          </Typography>
+          <Typography as="p" variant="body-sm-regular" color="secondary" className="mt-2 line-clamp-4">
+            {story.idea}
+          </Typography>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="rounded-full bg-q-brand-primary/10 px-3 py-1 text-xs text-q-brand-primary">{story.templateTitle}</span>
+            <span className="rounded-full bg-q-transparent-light-10 px-3 py-1 text-xs">{story.durationSec}s</span>
+            <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-500">Ready</span>
+          </div>
+        </div>
+        <a href={story.finalVideoUrl ?? "#"} download="cinestory.mp4">
+          <Button variant="marketingPrimary" className="w-full">
+            <Icon as={Film} size="sm" /> Download MP4
+          </Button>
+        </a>
+        <a href="/exports">
+          <Button variant="tertiary" className="w-full">
+            Export center
+          </Button>
+        </a>
+      </div>
+    </div>
+  );
+}

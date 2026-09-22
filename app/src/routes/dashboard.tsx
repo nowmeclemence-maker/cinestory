@@ -36,7 +36,7 @@ function DashboardPage() {
               Welcome to CineStory — your AI storytelling studio.
             </Typography>
           </div>
-          <Button variant="marketingPrimary" onClick={() => window.location.href = "/"}>
+          <Button variant="marketingPrimary" onClick={() => window.location.href = "/studio"}>
             <Icon as={Plus} size="sm" /> New Story
           </Button>
         </div>
@@ -64,7 +64,7 @@ function DashboardPage() {
               <Typography as="p" variant="body-md-regular" color="secondary">
                 No stories yet. Describe your first idea in the Studio.
               </Typography>
-              <Button variant="primary" onClick={() => window.location.href = "/"}>
+              <Button variant="primary" onClick={() => window.location.href = "/studio"}>
                 Go to Studio
               </Button>
             </div>

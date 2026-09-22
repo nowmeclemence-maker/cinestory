@@ -311,9 +311,9 @@ export async function createStory(input: {
     location_id: input.locationId,
     duration_sec: durationSec,
     scene_count: script.scenes.length,
-    status: "generating",
-    progress_label: "Casting your scenes…",
-    current_step: "video",
+    status: "draft",
+    progress_label: null,
+    current_step: "script",
     estimated_cost: estimatedCost,
     spent_cost: 0,
     title: script.title,
@@ -330,21 +330,7 @@ export async function createStory(input: {
     created_at: now,
     updated_at: now,
   };
-  const sceneRows: SceneRow[] = script.scenes.map((scene, idx) => ({
-    id: crypto.randomUUID(),
-    story_id: id,
-    idx,
-    description: scene.description,
-    camera: scene.camera,
-    dialogue: scene.dialogue,
-    on_screen_text: scene.onScreenText,
-    status: "pending",
-    image_job_id: null,
-    image_url: null,
-    video_job_id: null,
-    video_url: null,
-    error: null,
-  }));
+  const sceneRows: SceneRow[] = buildSceneRows(id, script);
 
   if (!db) {
     devState().stories.set(id, row);
@@ -400,13 +386,239 @@ export async function createStory(input: {
     );
   }
 
-  // Kick off every scene's image generation in parallel — fire-and-forget,
-  // the poll/advance loop in getStory() picks up completion.
-  await Promise.all(
-    sceneRows.map((scene) => submitSceneImage(owner, db, id, scene, row, template, location)),
-  );
-
+  // Lot A: a new story stops at the Script step. Nothing is generated until
+  // the user validates the script (validateScript) — no silent generation chain.
   return getStory(id);
+}
+
+/** Build the file rows for a script (shared by create / regenerate / edits). */
+function buildSceneRows(storyId: string, script: Script): SceneRow[] {
+  return script.scenes.map((scene, idx) => ({
+    id: crypto.randomUUID(),
+    story_id: storyId,
+    idx,
+    description: scene.description,
+    camera: scene.camera,
+    dialogue: scene.dialogue,
+    on_screen_text: scene.onScreenText,
+    status: "pending",
+    image_job_id: null,
+    image_url: null,
+    video_job_id: null,
+    video_url: null,
+    error: null,
+  }));
+}
+
+function insertSceneStatement(db: D1Database, scene: SceneRow) {
+  return db
+    .prepare(
+      `INSERT INTO story_scenes (id, story_id, idx, description, camera, dialogue, on_screen_text, status)
+       VALUES (?,?,?,?,?,?,?,'pending')`,
+    )
+    .bind(scene.id, scene.story_id, scene.idx, scene.description, scene.camera, scene.dialogue, scene.on_screen_text);
+}
+
+async function loadScenes(db: D1Database | null, storyId: string): Promise<SceneRow[]> {
+  if (!db) return devState().scenes.get(storyId) ?? [];
+  const result = await db
+    .prepare("SELECT * FROM story_scenes WHERE story_id = ? ORDER BY idx ASC")
+    .bind(storyId)
+    .all<SceneRow>();
+  return result.results;
+}
+
+async function loadOwnedStory(storyId: string): Promise<{ db: D1Database | null; story: StoryRow }> {
+  const owner = await ownerKey();
+  const db = await database();
+  if (!db) {
+    const story = devState().stories.get(storyId);
+    if (!story || story.owner_key !== owner) {
+      throw new ApiJobError("story_not_found", "This story no longer exists.", { status: 404 });
+    }
+    return { db: null, story };
+  }
+  const story = await db
+    .prepare("SELECT * FROM stories WHERE id = ? AND owner_key = ?")
+    .bind(storyId, owner)
+    .first<StoryRow>();
+  if (!story) {
+    throw new ApiJobError("story_not_found", "This story no longer exists.", { status: 404 });
+  }
+  return { db, story };
+}
+
+function scriptLockedError() {
+  return new ApiJobError(
+    "script_locked",
+    "The script can only be edited while the story is still at the Script step.",
+    { status: 409 },
+  );
+}
+
+export interface ScriptSceneEdit {
+  idx: number;
+  description: string;
+  camera: string;
+  dialogue: string;
+  onScreenText: string;
+}
+
+/**
+ * Lot A — persist a user-edited script (title, hook, scenes). Only allowed at
+ * the Script step, before any generation; scenes are rebuilt so reordering,
+ * insertions and deletions stay index-consistent. Nothing is charged.
+ */
+export async function updateScript(
+  storyId: string,
+  edits: { title: string; hook: string; cta?: string; scenes: ScriptSceneEdit[] },
+): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "draft") throw scriptLockedError();
+
+  const scenes = edits.scenes.map((scene) => ({
+    description: scene.description ?? "",
+    camera: scene.camera ?? "",
+    dialogue: scene.dialogue ?? "",
+    onScreenText: scene.onScreenText ?? "",
+  }));
+  if (scenes.length === 0) {
+    throw new ApiJobError("script_empty", "A script needs at least one scene.", { status: 400 });
+  }
+
+  let parsed: Partial<Script> | null = null;
+  try {
+    parsed = story.script_json ? (JSON.parse(story.script_json) as Partial<Script>) : null;
+  } catch {
+    parsed = null;
+  }
+  const nextScript: Script = {
+    title: edits.title,
+    hook: edits.hook,
+    cta: edits.cta ?? parsed?.cta ?? "",
+    musicMood: parsed?.musicMood ?? "cinematic, emotional",
+    colorGrade: parsed?.colorGrade ?? "warm cinematic",
+    scenes: scenes.map((scene) => ({
+      description: scene.description,
+      camera: scene.camera,
+      dialogue: scene.dialogue,
+      onScreenText: scene.onScreenText,
+    })),
+  };
+
+  const sceneRows: SceneRow[] = scenes.map((scene, idx) => ({
+    id: crypto.randomUUID(),
+    story_id: storyId,
+    idx,
+    description: scene.description,
+    camera: scene.camera,
+    dialogue: scene.dialogue,
+    on_screen_text: scene.onScreenText,
+    status: "pending",
+    image_job_id: null,
+    image_url: null,
+    video_job_id: null,
+    video_url: null,
+    error: null,
+  }));
+
+  if (!db) {
+    const dev = devState().stories.get(storyId);
+    if (dev) {
+      Object.assign(dev, {
+        title: nextScript.title,
+        hook: nextScript.hook,
+        cta: nextScript.cta,
+        script_json: JSON.stringify(nextScript),
+        scene_count: sceneRows.length,
+        updated_at: new Date().toISOString(),
+      });
+    }
+    devState().scenes.set(storyId, sceneRows);
+  } else {
+    await db.batch([
+      db
+        .prepare(
+          "UPDATE stories SET title=?, hook=?, cta=?, script_json=?, scene_count=?, updated_at=datetime('now') WHERE id=?",
+        )
+        .bind(nextScript.title, nextScript.hook, nextScript.cta, JSON.stringify(nextScript), sceneRows.length, storyId),
+      db.prepare("DELETE FROM story_scenes WHERE story_id = ?").bind(storyId),
+      ...sceneRows.map((scene) => insertSceneStatement(db, scene)),
+    ]);
+  }
+  return getStory(storyId);
+}
+
+/** Lot A — ask the AI to rewrite the script (same idea, template, location, duration). */
+export async function regenerateScript(storyId: string): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "draft") throw scriptLockedError();
+
+  const template = getTemplate(story.template_id);
+  const location = getLocation(story.location_id, template);
+  const script = await generateScript({
+    idea: story.idea,
+    templateDirective: template.directive,
+    templateTitle: template.title,
+    locationDescription: location.description,
+    sceneCount: story.scene_count,
+  });
+  const sceneRows = buildSceneRows(storyId, script);
+
+  if (!db) {
+    const dev = devState().stories.get(storyId);
+    if (dev) {
+      Object.assign(dev, {
+        title: script.title,
+        hook: script.hook,
+        cta: script.cta,
+        music_mood: script.musicMood,
+        color_grade: script.colorGrade,
+        script_json: JSON.stringify(script),
+        scene_count: script.scenes.length,
+        updated_at: new Date().toISOString(),
+      });
+    }
+    devState().scenes.set(storyId, sceneRows);
+  } else {
+    await db.batch([
+      db
+        .prepare(
+          "UPDATE stories SET title=?, hook=?, cta=?, music_mood=?, color_grade=?, script_json=?, scene_count=?, updated_at=datetime('now') WHERE id=?",
+        )
+        .bind(script.title, script.hook, script.cta, script.musicMood, script.colorGrade, JSON.stringify(script), script.scenes.length, storyId),
+      db.prepare("DELETE FROM story_scenes WHERE story_id = ?").bind(storyId),
+      ...sceneRows.map((scene) => insertSceneStatement(db, scene)),
+    ]);
+  }
+  return getStory(storyId);
+}
+
+/**
+ * Lot A — the ONLY gate into paid generation. Validating the script moves the
+ * story to Storyboard and starts the per-scene images. Idempotent: calling it
+ * on a story that already left the Script step returns the story untouched.
+ */
+export async function validateScript(storyId: string): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "draft") return getStory(storyId);
+
+  const template = getTemplate(story.template_id);
+  const location = getLocation(story.location_id, template);
+  const scenes = await loadScenes(db, storyId);
+
+  await updateStory(db, storyId, {
+    status: "generating",
+    current_step: "storyboard",
+    progress_label: "Casting your scenes…",
+  });
+  const running = { ...story, status: "generating" as const };
+  await Promise.all(
+    scenes.map((scene) =>
+      submitSceneImage(running.owner_key ?? "", db, storyId, scene, running, template, location),
+    ),
+  );
+  return getStory(storyId);
 }
 
 async function submitSceneImage(

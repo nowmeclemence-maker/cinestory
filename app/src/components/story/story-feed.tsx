@@ -1,25 +1,11 @@
-import { Download as IconDownload } from "lucide-react";
+import { Download as IconDownload, Clapperboard as IconClapperboard } from "lucide-react";
 import { Loader } from "@higgsfield/quanta/loader";
+import { Button } from "@higgsfield/quanta/button";
 import { GenerationTile } from "@/components/generation-card";
 import { ScreenEmptyState } from "@/components/screen-empty-state";
 import type { ScreenEmptyStateContent } from "@/components/screen-empty-state";
 import type { StoryDTO } from "@/lib/story-engine.server";
-
-const STEP_LABELS: Record<string, string> = {
-  old: "Old format",
-  idea: "Idea",
-  script: "Script",
-  characters: "Characters",
-  locations: "Locations",
-  storyboard: "Storyboard",
-  video: "Video",
-  audio: "Audio",
-  assembly: "Final cut",
-};
-
-function stepLabel(step: string): string {
-  return STEP_LABELS[step] ?? step;
-}
+import { stepLabel } from "@/lib/story-templates";
 
 function statusLabel(story: StoryDTO): string {
   if (story.status === "ready") return "Ready";
@@ -67,6 +53,29 @@ export function StoryTile({
   authorName: string;
   authorAvatar?: string;
 }) {
+  if (story.status === "draft") {
+    // Script step: nothing generated yet — the story awaits the writer.
+    return (
+      <div className="relative flex aspect-[9/16] w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-lg border border-q-border-subtle bg-q-background-secondary p-4 text-center">
+        <StepChip story={story} />
+        <div className="flex size-12 items-center justify-center rounded-xl bg-q-brand-primary/10">
+          <IconClapperboard className="size-6 text-q-brand-primary" />
+        </div>
+        <p className="line-clamp-3 text-sm font-medium text-q-text-primary">
+          {story.title ?? story.idea}
+        </p>
+        <p className="text-xs text-q-text-tertiary">
+          {story.sceneCount} scenes · ~{Math.round(story.estimatedCost)} credits
+        </p>
+        <a href={`/workspace?story=${story.id}`} className="mt-1">
+          <Button variant="marketingPrimary" size="sm">
+            Edit script
+          </Button>
+        </a>
+      </div>
+    );
+  }
+
   if (story.status === "ready" && story.finalVideoUrl) {
     return (
       <GenerationTile

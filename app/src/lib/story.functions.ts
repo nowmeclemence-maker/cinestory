@@ -1,6 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { createStory, getStory, listStories } from "./story-engine.server";
+import {
+  createStory,
+  getStory,
+  listStories,
+  regenerateScript,
+  updateScript,
+  validateScript,
+} from "./story-engine.server";
 
 const storedRefSchema = z
   .object({ ref: z.any(), src: z.string() })
@@ -37,3 +44,38 @@ export const getStoryFn = createServerFn({ method: "POST" })
 export const listStoriesFn = createServerFn({ method: "POST" })
   .validator(z.object({ projectId: z.string().optional() }))
   .handler(({ data }) => listStories(data.projectId));
+
+const sceneEditSchema = z.object({
+  idx: z.number().int().nonnegative(),
+  description: z.string(),
+  camera: z.string(),
+  dialogue: z.string(),
+  onScreenText: z.string(),
+});
+
+export const updateScriptFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      storyId: z.string().min(1),
+      title: z.string().trim().max(120),
+      hook: z.string().max(500),
+      cta: z.string().max(240).optional(),
+      scenes: z.array(sceneEditSchema).min(1),
+    }),
+  )
+  .handler(({ data }) =>
+    updateScript(data.storyId, {
+      title: data.title,
+      hook: data.hook,
+      cta: data.cta,
+      scenes: data.scenes,
+    }),
+  );
+
+export const regenerateScriptFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1) }))
+  .handler(({ data }) => regenerateScript(data.storyId));
+
+export const validateScriptFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1) }))
+  .handler(({ data }) => validateScript(data.storyId));
