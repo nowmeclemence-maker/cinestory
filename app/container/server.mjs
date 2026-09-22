@@ -72,7 +72,7 @@ async function downloadFile(url, destPath) {
 }
 
 async function runJob(job) {
-  const { jobId, clips, hook, cta, appBaseUrl, containerToken } = job;
+  const { jobId, clips, hook, cta, appBaseUrl, containerToken, musicUrl, voiceoverUrl } = job;
   const dir = `/tmp/${jobId}`;
   await fsp.mkdir(dir, { recursive: true });
   jobs.set(jobId, { status: "running", progress: 5, error: null });
@@ -83,8 +83,24 @@ async function runJob(job) {
       const dest = path.join(dir, `clip_${i}.mp4`);
       await downloadFile(clips[i].url, dest);
       clipPaths.push(dest);
-      jobs.set(jobId, { status: "running", progress: 5 + Math.round((i / clips.length) * 40), error: null });
+      jobs.set(jobId, { status: "running", progress: 5 + Math.round((i / clips.length) * 30), error: null });
     }
+
+    const extraInputs = []; // [ "-i", path, ... ]
+    let musicPath = null;
+    let voiceoverPath = null;
+    if (musicUrl) {
+      musicPath = path.join(dir, "music.m4a");
+      await downloadFile(musicUrl, musicPath);
+      extraInputs.push("-i", musicPath);
+    }
+    if (voiceoverUrl) {
+      voiceoverPath = path.join(dir, "voiceover.m4a");
+      await downloadFile(voiceoverUrl, voiceoverPath);
+      extraInputs.push("-i", voiceoverPath);
+    }
+    const musicInputIdx = clipPaths.length;
+    const voiceInputIdx = musicUrl ? clipPaths.length + 1 : clipPaths.length;
 
     const filters = [];
     const vLabels = [];
@@ -95,7 +111,8 @@ async function runJob(job) {
         `pad=1080:1920:(ow-iw)/2:(oh-ih)/2`,
         `setsar=1`,
       ];
-      const caption = clips[i].onScreenText;
+      // Lot E: a scene's caption is burned only when its dialogue is enabled.
+      const caption = clips[i].dialogueEnabled === false ? "" : clips[i].onScreenText;
       if (caption) {
         parts.push(
           `drawtext=fontfile=${FONT}:text='${escapeDrawtext(caption)}':fontsize=52:fontcolor=white:borderw=3:bordercolor=black@0.75:x=(w-text_w)/2:y=h-260`,
@@ -116,19 +133,35 @@ async function runJob(job) {
       aLabels.push(`[${i}:a]`);
     }
     const concatLine = `${vLabels.join("")}${aLabels.join("")}concat=n=${clipPaths.length}:v=1:a=1[outv][outa]`;
-    const filterComplex = [...filters, concatLine].join(";");
+    const audioLines = [];
+
+    // Lot E: music mixed low under the film (faded in/out), voiceover on top.
+    let finalAudioLabel = "[outa]";
+    if (musicPath) {
+      audioLines.push(`[${musicInputIdx}:a]volume=0.14,afade=t=in:st=0:d=1[mus]`);
+      audioLines.push(`${finalAudioLabel}[mus]amix=inputs=2:duration=first:normalize=0[mix1]`);
+      finalAudioLabel = "[mix1]";
+    }
+    if (voiceoverPath) {
+      audioLines.push(`[${voiceInputIdx}:a]volume=0.9[vo]`);
+      audioLines.push(`${finalAudioLabel}[vo]amix=inputs=2:duration=first:normalize=0[mix2]`);
+      finalAudioLabel = "[mix2]";
+    }
+
+    const filterComplex = [...filters, concatLine, ...audioLines].join(";");
 
     const outputPath = path.join(dir, "final.mp4");
     const posterPath = path.join(dir, "poster.jpg");
     const args = [
       "-y",
       ...clipPaths.flatMap((p) => ["-i", p]),
+      ...extraInputs,
       "-filter_complex",
       filterComplex,
       "-map",
       "[outv]",
       "-map",
-      "[outa]",
+      finalAudioLabel,
       "-c:v",
       "libx264",
       "-crf",
@@ -141,7 +174,7 @@ async function runJob(job) {
       "+faststart",
       outputPath,
     ];
-    jobs.set(jobId, { status: "running", progress: 60, error: null });
+    jobs.set(jobId, { status: "running", progress: 65, error: null });
     await run("ffmpeg", args, { maxBuffer: 1024 * 1024 * 64 });
 
     await run("ffmpeg", ["-y", "-i", outputPath, "-frames:v", "1", "-q:v", "3", posterPath]);

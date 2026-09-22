@@ -28,6 +28,7 @@ import { Route as VoicesRouteImport } from './routes/voices'
 import { Route as ApiUserRouteImport } from './routes/api/user'
 import { Route as ApiStoryMediaSplatRouteImport } from './routes/api/story-media/$'
 import { Route as ApiMediaUploadRouteImport } from './routes/api/media/upload'
+import { Route as ApiMediaUploadAudioRouteImport } from './routes/api/media/upload-audio'
 import { Route as ApiStoriesIdFinalizeRouteImport } from './routes/api/stories/$id/finalize'
 import { Route as ApiStoriesIdAssembleRouteImport } from './routes/api/stories/$id/assemble'
 
@@ -126,6 +127,11 @@ const ApiMediaUploadRoute = ApiMediaUploadRouteImport.update({
   path: '/api/media/upload',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMediaUploadAudioRoute = ApiMediaUploadAudioRouteImport.update({
+  id: '/api/media/upload-audio',
+  path: '/api/media/upload-audio',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiStoriesIdFinalizeRoute = ApiStoriesIdFinalizeRouteImport.update({
   id: '/api/stories/$id/finalize',
   path: '/api/stories/$id/finalize',
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/user': typeof ApiUserRoute
   '/api/media/upload': typeof ApiMediaUploadRoute
+  '/api/media/upload-audio': typeof ApiMediaUploadAudioRoute
   '/api/story-media/$': typeof ApiStoryMediaSplatRoute
   '/api/stories/$id/assemble': typeof ApiStoriesIdAssembleRoute
   '/api/stories/$id/finalize': typeof ApiStoriesIdFinalizeRoute
@@ -179,6 +186,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/user': typeof ApiUserRoute
   '/api/media/upload': typeof ApiMediaUploadRoute
+  '/api/media/upload-audio': typeof ApiMediaUploadAudioRoute
   '/api/story-media/$': typeof ApiStoryMediaSplatRoute
   '/api/stories/$id/assemble': typeof ApiStoriesIdAssembleRoute
   '/api/stories/$id/finalize': typeof ApiStoriesIdFinalizeRoute
@@ -202,6 +210,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/user': typeof ApiUserRoute
   '/api/media/upload': typeof ApiMediaUploadRoute
+  '/api/media/upload-audio': typeof ApiMediaUploadAudioRoute
   '/api/story-media/$': typeof ApiStoryMediaSplatRoute
   '/api/stories/$id/assemble': typeof ApiStoriesIdAssembleRoute
   '/api/stories/$id/finalize': typeof ApiStoriesIdFinalizeRoute
@@ -227,6 +236,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/user'
     | '/api/media/upload'
+    | '/api/media/upload-audio'
     | '/api/story-media/$'
     | '/api/stories/$id/assemble'
     | '/api/stories/$id/finalize'
@@ -250,6 +260,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/user'
     | '/api/media/upload'
+    | '/api/media/upload-audio'
     | '/api/story-media/$'
     | '/api/stories/$id/assemble'
     | '/api/stories/$id/finalize'
@@ -273,6 +284,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/user'
     | '/api/media/upload'
+    | '/api/media/upload-audio'
     | '/api/story-media/$'
     | '/api/stories/$id/assemble'
     | '/api/stories/$id/finalize'
@@ -297,6 +309,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiUserRoute: typeof ApiUserRoute
   ApiMediaUploadRoute: typeof ApiMediaUploadRoute
+  ApiMediaUploadAudioRoute: typeof ApiMediaUploadAudioRoute
   ApiStoryMediaSplatRoute: typeof ApiStoryMediaSplatRoute
   ApiStoriesIdAssembleRoute: typeof ApiStoriesIdAssembleRoute
   ApiStoriesIdFinalizeRoute: typeof ApiStoriesIdFinalizeRoute
@@ -437,6 +450,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMediaUploadRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/media/upload-audio': {
+      id: '/api/media/upload-audio'
+      path: '/api/media/upload-audio'
+      fullPath: '/api/media/upload-audio'
+      preLoaderRoute: typeof ApiMediaUploadAudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/stories/$id/finalize': {
       id: '/api/stories/$id/finalize'
       path: '/api/stories/$id/finalize'
@@ -473,6 +493,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiUserRoute: ApiUserRoute,
   ApiMediaUploadRoute: ApiMediaUploadRoute,
+  ApiMediaUploadAudioRoute: ApiMediaUploadAudioRoute,
   ApiStoryMediaSplatRoute: ApiStoryMediaSplatRoute,
   ApiStoriesIdAssembleRoute: ApiStoriesIdAssembleRoute,
   ApiStoriesIdFinalizeRoute: ApiStoriesIdFinalizeRoute,

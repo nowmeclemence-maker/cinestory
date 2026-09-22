@@ -42,6 +42,8 @@ export interface SceneDTO {
   locationSource: string | null;
   locationImage: string | null;
   locationJobId: string | null;
+  // Lot E: dialogue toggle
+  dialogueEnabled: boolean;
 }
 
 export interface StoryDTO {
@@ -67,6 +69,9 @@ export interface StoryDTO {
   error: string | null;
   finalVideoUrl: string | null;
   finalPosterUrl: string | null;
+  // Lot E: audio
+  musicTrack: { name: string; url: string } | null;
+  voiceoverUrl: string | null;
   createdAt: string;
   updatedAt: string;
   scenes: SceneDTO[];
@@ -96,6 +101,8 @@ interface StoryRow {
   reference_ref: string | null;
   final_video_key: string | null;
   final_poster_key: string | null;
+  music_track?: string | null;
+  voiceover_url?: string | null;
   error: string | null;
   created_at: string;
   updated_at: string;
@@ -122,6 +129,8 @@ interface SceneRow {
   location_ref?: string | null;
   location_source?: string | null;
   location_job_id?: string | null;
+  // Lot E: dialogue toggle
+  dialogue_enabled?: number;
 }
 
 interface DevState {
@@ -191,6 +200,8 @@ function toDTO(story: StoryRow, scenes: SceneRow[], mediaBaseUrl: string): Story
     error: story.error,
     finalVideoUrl: story.final_video_key ? `${mediaBaseUrl}/${story.final_video_key}` : null,
     finalPosterUrl: story.final_poster_key ? `${mediaBaseUrl}/${story.final_poster_key}` : null,
+    musicTrack: tryParseJson<{ name: string; url: string } | null>(story.music_track, null),
+    voiceoverUrl: story.voiceover_url ?? null,
     createdAt: story.created_at,
     updatedAt: story.updated_at,
     scenes: scenes
@@ -212,6 +223,7 @@ function toDTO(story: StoryRow, scenes: SceneRow[], mediaBaseUrl: string): Story
         locationSource: scene.location_source ?? null,
         locationImage: tryParseJson<StoredRef | null>(scene.location_ref, null)?.src ?? null,
         locationJobId: scene.location_job_id ?? null,
+        dialogueEnabled: scene.dialogue_enabled !== 0,
       })),
   };
 }
@@ -1218,6 +1230,63 @@ export async function validateLocations(storyId: string): Promise<StoryDTO> {
   return getStory(storyId);
 }
 
+// ─── Lot E: audio ────────────────────────────────────────────────────────────
+
+/** Turn a scene's native dialogue on/off. Applies at the Audio step and to future video regenerations. */
+export async function setSceneDialogue(
+  storyId: string,
+  sceneId: string,
+  enabled: boolean,
+): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "audio") {
+    throw new ApiJobError("audio_locked", "Dialogue toggles are available at the Audio step.", { status: 409 });
+  }
+  const scenes = await loadScenes(db, storyId);
+  if (!scenes.some((s) => s.id === sceneId)) {
+    throw new ApiJobError("scene_not_found", "Scene not found.", { status: 404 });
+  }
+  await updateScene(db, storyId, sceneId, { dialogue_enabled: enabled ? 1 : 0 });
+  return getStory(storyId);
+}
+
+/** Select the story's music track (from the music library or a preset). */
+export async function setStoryMusic(
+  storyId: string,
+  track: { name: string; url: string } | null,
+): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "audio") {
+    throw new ApiJobError("audio_locked", "Music is selected at the Audio step.", { status: 409 });
+  }
+  await updateStory(db, storyId, {
+    music_track: track && track.url ? JSON.stringify({ name: track.name, url: track.url }) : null,
+  });
+  return getStory(storyId);
+}
+
+/** Attach an imported voiceover recording to the story (mixed at assembly). */
+export async function setStoryVoiceover(storyId: string, url: string | null): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "audio") {
+    throw new ApiJobError("audio_locked", "Voiceover is set at the Audio step.", { status: 409 });
+  }
+  await updateStory(db, storyId, { voiceover_url: url });
+  return getStory(storyId);
+}
+
+/**
+ * Lot E — validating the mix moves the story to assembly (the container
+ * stitches clips, mixes music + voiceover and burns captions). No extra credit
+ * cost: assembly runs in the CineStory container.
+ */
+export async function validateAudio(storyId: string): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "audio") return getStory(storyId);
+  await markAssemblyStarted(storyId);
+  return getStory(storyId);
+}
+
 async function submitSceneImage(
   owner: string,
   db: D1Database | null,
@@ -1490,7 +1559,10 @@ async function submitSceneVideo(
       `Setting: ${location.description}.`,
       scene.description,
       scene.camera ? `Camera movement: ${scene.camera}.` : "",
-      scene.dialogue ? `The subject says: "${scene.dialogue}"` : "Natural ambient motion and sound.",
+      // Lot E: dialogue is generated only when the scene's dialogue toggle is on.
+      scene.dialogue_enabled !== 0 && scene.dialogue
+        ? `The subject says: "${scene.dialogue}"`
+        : "Natural ambient motion and sound, no dialogue.",
     ]
       .filter(Boolean)
       .join(" ");
@@ -1552,8 +1624,10 @@ async function resolveStory(
     const allReady = scenes.every((s) => s.status === "ready");
     const anyFailed = scenes.some((s) => s.status === "failed");
     if (allReady) {
-      await updateStory(db, story.id, { status: "assembling", progress_label: "Cutting the final film…" });
-      story = { ...story, status: "assembling" };
+      // Lot E: videos done → the Audio step (dialogue toggles, music, voiceover).
+      // The user validates the mix; validateAudio then starts assembly.
+      await updateStory(db, story.id, { status: "audio", current_step: "audio", progress_label: "Mix your sound…" });
+      story = { ...story, status: "audio", current_step: "audio", progress_label: "Mix your sound…" };
     } else if (anyFailed && scenes.every((s) => s.status === "ready" || s.status === "failed")) {
       // Surface the precise cause instead of a generic message.
       const firstFailure = scenes.find((s) => s.status === "failed" && s.error)?.error;

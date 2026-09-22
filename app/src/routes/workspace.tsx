@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Typography } from "@higgsfield/quanta/typography";
 import { Button } from "@higgsfield/quanta/button";
@@ -11,6 +11,7 @@ import { toast } from "@higgsfield/quanta/sonner";
 import {
   ArrowLeft, ArrowUp, ArrowDown, Plus, Trash2, Wand2, Check,
   Clapperboard, Film, Camera, RefreshCw, Coins, UserRound, ImagePlus, Users,
+  Volume2, Music as IconMusic, Mic, Upload,
 } from "lucide-react";
 import { AppShell } from "@/layouts/app-shell";
 import { StepBar } from "@/components/story/step-bar";
@@ -19,9 +20,12 @@ import {
   regenerateSceneImageFn, listStoryCharactersFn, proposeCharactersFn, linkCharacterFn,
   unlinkCharacterFn, generateCharacterPortraitFn, validateCharactersFn, addCharacterImageFn,
   listLibraryCharactersFn, proposeLocationsFn, setSceneLocationFn, generateSceneLocationFn,
-  validateLocationsFn,
+  validateLocationsFn, setSceneDialogueFn, setStoryMusicFn, setStoryVoiceoverFn, validateAudioFn,
+  listMusicTracksFn, createMusicTrackFn,
 } from "@/lib/story.functions";
-import { uploadAsset } from "@/lib/fnf.browser";
+import { uploadAsset, uploadAudioAsset } from "@/lib/fnf.browser";
+import { triggerAssembly } from "@/lib/story.browser";
+import { MUSIC_PRESETS } from "@/lib/music-presets";
 import type { StoryDTO, SceneDTO } from "@/lib/story-engine.server";
 import type { CastMemberDTO } from "@/lib/story-engine.server";
 import { sceneDurationSeconds, STORY_LOCATIONS, videoClipCostCredits } from "@/lib/story-templates";
@@ -441,6 +445,91 @@ function WorkspacePage() {
     }
   };
 
+  // ── Lot E: audio ───────────────────────────────────────────────────────────
+  const { data: userTracks = [] } = useQuery({
+    queryKey: ["music", "tracks"],
+    queryFn: () => listMusicTracksFn(),
+    enabled: story?.status === "audio",
+  });
+  const allMusicOptions = [
+    ...MUSIC_PRESETS.map((p) => ({ id: p.id, name: p.name, sub: `${p.mood} · preset`, url: p.url })),
+    ...userTracks.map((t) => ({ id: t.id, name: t.name, sub: t.mood || "your library", url: t.url })),
+  ];
+
+  const handleSetDialogue = async (sceneId: string, enabled: boolean) => {
+    if (!story) return;
+    try {
+      await setSceneDialogueFn({ data: { storyId: story.id, sceneId, enabled } });
+      await invalidate();
+    } catch (error) {
+      getStageError(error);
+    }
+  };
+
+  const handleSelectMusic = async (track: { name: string; url: string } | null) => {
+    if (!story) return;
+    try {
+      await setStoryMusicFn({ data: { storyId: story.id, track } });
+      await invalidate();
+    } catch (error) {
+      getStageError(error);
+    }
+  };
+
+  const handleUploadMusic = async (file: File) => {
+    if (!story) return;
+    try {
+      const uploaded = await uploadAudioAsset(file);
+      const track = await createMusicTrackFn({ data: { name: file.name.replace(/\.[^.]+$/, ""), url: uploaded.url, mood: "uploaded" } });
+      await handleSelectMusic({ name: track.name, url: track.url });
+      toast.success("Track added to your library");
+    } catch (error) {
+      getStageError(error);
+    }
+  };
+
+  const handleSetVoiceover = async (file: File | null) => {
+    if (!story) return;
+    try {
+      if (!file) {
+        await setStoryVoiceoverFn({ data: { storyId: story.id, url: null } });
+      } else {
+        const uploaded = await uploadAudioAsset(file);
+        await setStoryVoiceoverFn({ data: { storyId: story.id, url: uploaded.url } });
+        toast.success("Voiceover added — it will sit above the mix");
+      }
+      await invalidate();
+    } catch (error) {
+      getStageError(error);
+    }
+  };
+
+  const handleValidateAudio = async () => {
+    if (!story || story.status !== "audio") return;
+    setStageError(null);
+    setValidating(true);
+    try {
+      await validateAudioFn({ data: { storyId: story.id } });
+      await invalidate();
+      toast.success("Mix validated — cutting the final film");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not validate the mix.";
+      setStageError(message);
+      toast.error(message);
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  // Kick off the assembly container when the story reaches the assembly step.
+  const assemblyDispatched = useRef(new Set<string>());
+  useEffect(() => {
+    if (story?.status === "assembling" && !assemblyDispatched.current.has(story.id)) {
+      assemblyDispatched.current.add(story.id);
+      void triggerAssembly(story.id).catch(() => assemblyDispatched.current.delete(story.id));
+    }
+  }, [story?.id, story?.status]);
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -547,6 +636,18 @@ function WorkspacePage() {
                 regeneratingScene={regeneratingScene}
                 onValidate={() => void handleValidateStoryboard()}
                 onRegenerateImage={(sceneId) => void handleRegenerateSceneImage(sceneId)}
+              />
+            ) : story.status === "audio" ? (
+              <AudioView
+                story={story}
+                options={allMusicOptions}
+                error={stageError}
+                validating={validating}
+                onToggleDialogue={(sceneId, enabled) => void handleSetDialogue(sceneId, enabled)}
+                onSelectMusic={(track) => void handleSelectMusic(track)}
+                onUploadMusic={(file) => void handleUploadMusic(file)}
+                onSetVoiceover={(file) => void handleSetVoiceover(file)}
+                onValidate={() => void handleValidateAudio()}
               />
             ) : story.status === "generating" || story.status === "assembling" ? (
               <ProductionView story={story} />
@@ -690,6 +791,152 @@ function ScriptEditor({
         <p className="mt-2 text-right text-xs text-q-text-tertiary">
           {editor.scenes.length} scene{editor.scenes.length === 1 ? "" : "s"} · production starts only after validation.
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Audio (Lot E) ───────────────────────────────────────────────────────────
+
+type MusicOption = { id: string; name: string; sub: string; url: string };
+
+function AudioView({
+  story, options, error, validating,
+  onToggleDialogue, onSelectMusic, onUploadMusic, onSetVoiceover, onValidate,
+}: {
+  story: StoryDTO;
+  options: MusicOption[];
+  error: string | null;
+  validating: boolean;
+  onToggleDialogue: (sceneId: string, enabled: boolean) => void;
+  onSelectMusic: (track: { name: string; url: string } | null) => void;
+  onUploadMusic: (file: File) => void;
+  onSetVoiceover: (file: File | null) => void;
+  onValidate: () => void;
+}) {
+  const selectedUrl = story.musicTrack?.url ?? null;
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-4">
+        <Typography as="h2" variant="title-sm-semi-bold" color="primary">Sound & mix</Typography>
+        <Typography as="p" variant="caption-sm-regular" color="secondary" className="mt-1">
+          Scenes already carry native dialogue and sound. Mute a scene's dialogue (captions hide too), pick a music bed, add an optional voiceover — then validate the mix to cut the film.
+        </Typography>
+        {error && (
+          <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm text-red-500" role="alert">
+            {error}
+          </div>
+        )}
+        <div className="mt-4">
+          <Button variant="marketingPrimary" size="md" disabled={validating} onClick={onValidate}>
+            {validating ? <Loader size="xs" color="neutral" /> : <Icon as={Film} size="sm" />}
+            Validate mix & cut the film
+          </Button>
+        </div>
+      </div>
+
+      {/* Music */}
+      <div className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-4">
+        <div className="flex items-center gap-2">
+          <Icon as={IconMusic} size="sm" className="text-q-brand-primary" />
+          <Typography as="h3" variant="label-md-medium" color="primary">Music</Typography>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onSelectMusic(null)}
+            className={`rounded-lg border px-3 py-2 text-sm ${
+              selectedUrl == null ? "border-q-brand-primary bg-q-brand-primary/10 text-q-brand-primary" : "border-q-border-subtle text-q-text-secondary hover:bg-q-transparent-light-10"
+            }`}
+          >
+            No music
+          </button>
+          {options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => onSelectMusic({ name: option.name, url: option.url })}
+              className={`rounded-lg border px-3 py-2 text-left text-sm ${
+                selectedUrl === option.url ? "border-q-brand-primary bg-q-brand-primary/10 text-q-brand-primary" : "border-q-border-subtle text-q-text-secondary hover:bg-q-transparent-light-10"
+              }`}
+            >
+              <span className="block font-medium">{option.name}</span>
+              <span className="block text-[11px] opacity-70">{option.sub}</span>
+            </button>
+          ))}
+          <label className="cursor-pointer rounded-lg border border-dashed border-q-border-subtle px-3 py-2 text-sm text-q-text-secondary hover:bg-q-transparent-light-10">
+            <span className="flex items-center gap-1.5"><Icon as={Upload} size="sm" /> Upload track</span>
+            <input type="file" accept="audio/*" className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) onUploadMusic(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </div>
+      </div>
+
+      {/* Voiceover */}
+      <div className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-4">
+        <div className="flex items-center gap-2">
+          <Icon as={Mic} size="sm" className="text-q-brand-primary" />
+          <Typography as="h3" variant="label-md-medium" color="primary">Voiceover</Typography>
+        </div>
+        <Typography as="p" variant="caption-sm-regular" color="secondary" className="mt-1">
+          Optional imported narration (mp3/m4a) — mixed above the film. AI text-to-speech arrives when Higgsfield opens it to apps.
+        </Typography>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="cursor-pointer rounded-lg border border-dashed border-q-border-subtle px-3 py-2 text-sm text-q-text-secondary hover:bg-q-transparent-light-10">
+            <span className="flex items-center gap-1.5"><Icon as={Upload} size="sm" /> Import voiceover</span>
+            <input type="file" accept="audio/*" className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) onSetVoiceover(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {story.voiceoverUrl && (
+            <>
+              <span className="text-xs text-emerald-500">Voiceover ready</span>
+              <button type="button" className="text-xs text-q-text-danger hover:underline" onClick={() => onSetVoiceover(null)}>Remove</button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Dialogue toggles */}
+      <div className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-4">
+        <div className="flex items-center gap-2">
+          <Icon as={Volume2} size="sm" className="text-q-brand-primary" />
+          <Typography as="h3" variant="label-md-medium" color="primary">Dialogue per scene</Typography>
+        </div>
+        <div className="mt-3 space-y-2">
+          {story.scenes.map((scene) => (
+            <div key={scene.id} className="flex items-center justify-between gap-3 rounded-lg border border-q-border-subtle bg-q-background-primary px-3 py-2">
+              <div className="min-w-0">
+                <Typography as="span" variant="label-md-medium" color="primary">Scene {scene.idx + 1}</Typography>
+                <Typography as="p" variant="caption-sm-regular" color="secondary" className="line-clamp-1">
+                  {scene.dialogue?.trim() || scene.onScreenText?.trim() || "Ambient only"}
+                </Typography>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={scene.dialogueEnabled}
+                aria-label={`Dialogue for scene ${scene.idx + 1}`}
+                onClick={() => onToggleDialogue(scene.id, !scene.dialogueEnabled)}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${scene.dialogueEnabled ? "bg-q-brand-primary" : "bg-q-transparent-light-10"}`}
+              >
+                <span className={`absolute top-0.5 size-5 rounded-full bg-white transition-all ${scene.dialogueEnabled ? "left-[22px]" : "left-0.5"}`} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <Typography as="p" variant="caption-sm-regular" color="tertiary" className="mt-2">
+          Turning dialogue off hides the scene's captions in this cut; regenerating the scene's video will also drop its spoken line.
+        </Typography>
       </div>
     </div>
   );

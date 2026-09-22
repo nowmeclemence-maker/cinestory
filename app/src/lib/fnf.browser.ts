@@ -94,3 +94,17 @@ export async function uploadAsset(file: File): Promise<AssetSelection> {
     ref: { ...body.ref, type: "media_input" },
   };
 }
+
+type AudioUploadResponse =
+  | { ok: true; url: string; name: string }
+  | { ok: false; error: { code: string; message: string } };
+
+/** Upload a music / voiceover audio file and return its durable media URL. */
+export async function uploadAudioAsset(file: File): Promise<{ url: string; name: string }> {
+  const form = new FormData();
+  form.set("file", file);
+  const response = await fetch("/api/media/upload-audio", { method: "POST", body: form });
+  const body = (await response.json()) as AudioUploadResponse;
+  if (!body.ok) throw errorFromJSON(body.error);
+  return { url: body.url, name: body.name };
+}

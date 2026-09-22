@@ -12,9 +12,13 @@ import {
   proposeLocations,
   regenerateSceneImage,
   regenerateScript,
+  setSceneDialogue,
   setSceneLocation,
+  setStoryMusic,
+  setStoryVoiceover,
   unlinkCharacter,
   updateScript,
+  validateAudio,
   validateCharacters,
   validateLocations,
   validateScript,
@@ -200,3 +204,53 @@ export const generateSceneLocationFn = createServerFn({ method: "POST" })
 export const validateLocationsFn = createServerFn({ method: "POST" })
   .validator(z.object({ storyId: z.string().min(1) }))
   .handler(({ data }) => validateLocations(data.storyId));
+
+// ─── Lot E: audio ────────────────────────────────────────────────────────────
+
+export const setSceneDialogueFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1), sceneId: z.string().min(1), enabled: z.boolean() }))
+  .handler(({ data }) => setSceneDialogue(data.storyId, data.sceneId, data.enabled));
+
+export const setStoryMusicFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      storyId: z.string().min(1),
+      track: z.object({ name: z.string().max(120), url: z.string().url() }).nullable(),
+    }),
+  )
+  .handler(({ data }) => setStoryMusic(data.storyId, data.track));
+
+export const setStoryVoiceoverFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1), url: z.string().url().nullable() }))
+  .handler(({ data }) => setStoryVoiceover(data.storyId, data.url));
+
+export const validateAudioFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1) }))
+  .handler(({ data }) => validateAudio(data.storyId));
+
+export const listMusicTracksFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { listMusicTracks } = await import("./services/music");
+  return listMusicTracks();
+});
+
+export const createMusicTrackFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      name: z.string().min(1).max(120),
+      url: z.string().url(),
+      genre: z.string().max(60).optional(),
+      mood: z.string().max(120).optional(),
+      durationSec: z.number().int().nonnegative().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { createMusicTrack } = await import("./services/music");
+    return createMusicTrack(data);
+  });
+
+export const deleteMusicTrackFn = createServerFn({ method: "POST" })
+  .validator(z.object({ id: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { deleteMusicTrack } = await import("./services/music");
+    return deleteMusicTrack(data.id);
+  });

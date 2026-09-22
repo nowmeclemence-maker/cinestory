@@ -39,6 +39,7 @@ export const Route = createFileRoute("/api/stories/$id/assemble")({
 
         const appBaseUrl = new URL(request.url).origin;
         const stub = container.getByName("cinestory-assembler");
+        const musicTrack = story.music_track ? JSON.parse(story.music_track) : null;
         await stub.fetch("https://do/__keepalive/start", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -49,9 +50,12 @@ export const Route = createFileRoute("/api/stories/$id/assemble")({
             title: story.title,
             hook: story.hook,
             cta: story.cta,
+            musicUrl: musicTrack?.url ?? null,
+            voiceoverUrl: story.voiceover_url ?? null,
             clips: readyScenes.map((scene) => ({
               url: scene.video_url,
               onScreenText: scene.on_screen_text ?? "",
+              dialogueEnabled: scene.dialogue_enabled !== 0,
             })),
           }),
         });

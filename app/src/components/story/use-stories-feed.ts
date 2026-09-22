@@ -5,7 +5,6 @@ import type { StoryDTO } from "@/lib/story-engine.server";
 import { triggerAssembly } from "@/lib/story.browser";
 
 const ACTIVE_STATUSES = new Set(["scripting", "characters", "locations", "storyboard", "generating", "assembling"]);
-
 export function useStoriesFeed(scopeKey: string, projectId?: string) {
   const dispatched = useRef(new Set<string>());
 
