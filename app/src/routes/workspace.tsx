@@ -51,6 +51,22 @@ function WorkspacePage() {
   const [regeneratingScene, setRegeneratingScene] = useState<string | null>(null);
   const [castBusy, setCastBusy] = useState<string | null>(null);
 
+  const { data: story, isLoading } = useQuery({
+    queryKey: ["workspace", storyId],
+    queryFn: () => getStoryFn({ data: { storyId: storyId! } }),
+    enabled: !!storyId,
+    refetchInterval: (query) => {
+      const s = query.state.data as StoryDTO | undefined;
+      if (!s) return false;
+      if (s.status === "generating" || s.status === "assembling") return 4000;
+      if (s.status === "storyboard") {
+        const final = s.scenes.every((scene) => scene.status === "image_ready" || scene.status === "failed");
+        return final ? false : 4000;
+      }
+      return false;
+    },
+  });
+
   const atCasting = story?.status === "characters";
   const { data: cast = [] } = useQuery({
     queryKey: ["workspace", storyId, "cast"],
@@ -70,22 +86,6 @@ function WorkspacePage() {
   const availableCharacters = libraryCharacters.filter(
     (candidate) => !cast.some((member) => member.characterId === candidate.id),
   );
-
-  const { data: story, isLoading } = useQuery({
-    queryKey: ["workspace", storyId],
-    queryFn: () => getStoryFn({ data: { storyId: storyId! } }),
-    enabled: !!storyId,
-    refetchInterval: (query) => {
-      const s = query.state.data as StoryDTO | undefined;
-      if (!s) return false;
-      if (s.status === "generating" || s.status === "assembling") return 4000;
-      if (s.status === "storyboard") {
-        const final = s.scenes.every((scene) => scene.status === "image_ready" || scene.status === "failed");
-        return final ? false : 4000;
-      }
-      return false;
-    },
-  });
 
   // Load draft content into the editor once the story lands in the Script step.
   useEffect(() => {
