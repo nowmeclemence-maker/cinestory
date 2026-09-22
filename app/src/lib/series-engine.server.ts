@@ -96,7 +96,7 @@ function tryParseJson<T>(str: string | null | undefined, fallback: T): T {
   }
 }
 
-async function loadSeries(seriesId: string): Promise<{ db: D1Database | null; row: SeriesRow }> {
+async function loadSeries(seriesId: string): Promise<{ db: D1Database; row: SeriesRow }> {
   const owner = await ownerKey();
   const db = await database();
   if (!db) throw new ApiJobError("db_unavailable", "Database unavailable.", { status: 503 });
