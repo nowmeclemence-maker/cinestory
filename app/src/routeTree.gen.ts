@@ -14,17 +14,21 @@ import { Route as VoicesRouteImport } from './routes/voices'
 import { Route as TemplatesRouteImport } from './routes/templates'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SeriesRouteImport } from './routes/series'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as PromptsRouteImport } from './routes/prompts'
 import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as MusicRouteImport } from './routes/music'
 import { Route as LocationsRouteImport } from './routes/locations'
+import { Route as HelpRouteImport } from './routes/help'
 import { Route as ExportsRouteImport } from './routes/exports'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CreditsRouteImport } from './routes/credits'
 import { Route as CharactersRouteImport } from './routes/characters'
 import { Route as BillingRouteImport } from './routes/billing'
 import { Route as AssetsRouteImport } from './routes/assets'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiUserRouteImport } from './routes/api/user'
 import { Route as ApiStoryMediaSplatRouteImport } from './routes/api/story-media/$'
@@ -58,6 +62,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SeriesRoute = SeriesRouteImport.update({
   id: '/series',
   path: '/series',
@@ -78,9 +87,19 @@ const ProjectsRoute = ProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MusicRoute = MusicRouteImport.update({
+  id: '/music',
+  path: '/music',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LocationsRoute = LocationsRouteImport.update({
   id: '/locations',
   path: '/locations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HelpRoute = HelpRouteImport.update({
+  id: '/help',
+  path: '/help',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExportsRoute = ExportsRouteImport.update({
@@ -111,6 +130,11 @@ const BillingRoute = BillingRouteImport.update({
 const AssetsRoute = AssetsRouteImport.update({
   id: '/assets',
   path: '/assets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -151,17 +175,21 @@ const ApiStoriesIdAssembleRoute = ApiStoriesIdAssembleRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/assets': typeof AssetsRoute
   '/billing': typeof BillingRoute
   '/characters': typeof CharactersRoute
   '/credits': typeof CreditsRoute
   '/dashboard': typeof DashboardRoute
   '/exports': typeof ExportsRoute
+  '/help': typeof HelpRoute
   '/locations': typeof LocationsRoute
+  '/music': typeof MusicRoute
   '/projects': typeof ProjectsRoute
   '/prompts': typeof PromptsRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/series': typeof SeriesRoute
+  '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/studio': typeof StudioRoute
   '/templates': typeof TemplatesRoute
@@ -176,17 +204,21 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/assets': typeof AssetsRoute
   '/billing': typeof BillingRoute
   '/characters': typeof CharactersRoute
   '/credits': typeof CreditsRoute
   '/dashboard': typeof DashboardRoute
   '/exports': typeof ExportsRoute
+  '/help': typeof HelpRoute
   '/locations': typeof LocationsRoute
+  '/music': typeof MusicRoute
   '/projects': typeof ProjectsRoute
   '/prompts': typeof PromptsRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/series': typeof SeriesRoute
+  '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/studio': typeof StudioRoute
   '/templates': typeof TemplatesRoute
@@ -202,17 +234,21 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/assets': typeof AssetsRoute
   '/billing': typeof BillingRoute
   '/characters': typeof CharactersRoute
   '/credits': typeof CreditsRoute
   '/dashboard': typeof DashboardRoute
   '/exports': typeof ExportsRoute
+  '/help': typeof HelpRoute
   '/locations': typeof LocationsRoute
+  '/music': typeof MusicRoute
   '/projects': typeof ProjectsRoute
   '/prompts': typeof PromptsRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/series': typeof SeriesRoute
+  '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/studio': typeof StudioRoute
   '/templates': typeof TemplatesRoute
@@ -229,17 +265,21 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/account'
     | '/assets'
     | '/billing'
     | '/characters'
     | '/credits'
     | '/dashboard'
     | '/exports'
+    | '/help'
     | '/locations'
+    | '/music'
     | '/projects'
     | '/prompts'
     | '/robots.txt'
     | '/series'
+    | '/settings'
     | '/sitemap.xml'
     | '/studio'
     | '/templates'
@@ -254,17 +294,21 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/account'
     | '/assets'
     | '/billing'
     | '/characters'
     | '/credits'
     | '/dashboard'
     | '/exports'
+    | '/help'
     | '/locations'
+    | '/music'
     | '/projects'
     | '/prompts'
     | '/robots.txt'
     | '/series'
+    | '/settings'
     | '/sitemap.xml'
     | '/studio'
     | '/templates'
@@ -279,17 +323,21 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/account'
     | '/assets'
     | '/billing'
     | '/characters'
     | '/credits'
     | '/dashboard'
     | '/exports'
+    | '/help'
     | '/locations'
+    | '/music'
     | '/projects'
     | '/prompts'
     | '/robots.txt'
     | '/series'
+    | '/settings'
     | '/sitemap.xml'
     | '/studio'
     | '/templates'
@@ -305,17 +353,21 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountRoute: typeof AccountRoute
   AssetsRoute: typeof AssetsRoute
   BillingRoute: typeof BillingRoute
   CharactersRoute: typeof CharactersRoute
   CreditsRoute: typeof CreditsRoute
   DashboardRoute: typeof DashboardRoute
   ExportsRoute: typeof ExportsRoute
+  HelpRoute: typeof HelpRoute
   LocationsRoute: typeof LocationsRoute
+  MusicRoute: typeof MusicRoute
   ProjectsRoute: typeof ProjectsRoute
   PromptsRoute: typeof PromptsRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SeriesRoute: typeof SeriesRoute
+  SettingsRoute: typeof SettingsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   StudioRoute: typeof StudioRoute
   TemplatesRoute: typeof TemplatesRoute
@@ -366,6 +418,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/series': {
       id: '/series'
       path: '/series'
@@ -394,11 +453,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/music': {
+      id: '/music'
+      path: '/music'
+      fullPath: '/music'
+      preLoaderRoute: typeof MusicRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/locations': {
       id: '/locations'
       path: '/locations'
       fullPath: '/locations'
       preLoaderRoute: typeof LocationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/help': {
+      id: '/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof HelpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/exports': {
@@ -441,6 +514,13 @@ declare module '@tanstack/react-router' {
       path: '/assets'
       fullPath: '/assets'
       preLoaderRoute: typeof AssetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -497,17 +577,21 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountRoute: AccountRoute,
   AssetsRoute: AssetsRoute,
   BillingRoute: BillingRoute,
   CharactersRoute: CharactersRoute,
   CreditsRoute: CreditsRoute,
   DashboardRoute: DashboardRoute,
   ExportsRoute: ExportsRoute,
+  HelpRoute: HelpRoute,
   LocationsRoute: LocationsRoute,
+  MusicRoute: MusicRoute,
   ProjectsRoute: ProjectsRoute,
   PromptsRoute: PromptsRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SeriesRoute: SeriesRoute,
+  SettingsRoute: SettingsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   StudioRoute: StudioRoute,
   TemplatesRoute: TemplatesRoute,
