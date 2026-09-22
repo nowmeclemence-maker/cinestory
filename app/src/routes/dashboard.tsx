@@ -5,7 +5,7 @@ import { Card } from "@higgsfield/quanta/card";
 import { Button } from "@higgsfield/quanta/button";
 import { Icon } from "@higgsfield/quanta/icon";
 import { Loader } from "@higgsfield/quanta/loader";
-import { Plus, Film, Users, MapPin, TrendingUp } from "lucide-react";
+import { Plus, Film, Users, MapPin, TrendingUp, Loader2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { AppShell } from "@/layouts/app-shell";
 import { listStoriesFn } from "@/lib/story.functions";
@@ -46,7 +46,7 @@ function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard icon={Film} label="Total Stories" value={stories.length} />
           <StatCard icon={TrendingUp} label="Ready to Publish" value={readyCount} />
-          <StatCard icon={Loader} label="In Progress" value={inProgressCount} />
+          <StatCard icon={Loader2} label="In Progress" value={inProgressCount} />
           <StatCard icon={Users} label="Characters" value="—" />
         </div>
 
