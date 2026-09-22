@@ -4,9 +4,11 @@ import {
   createStory,
   getStory,
   listStories,
+  regenerateSceneImage,
   regenerateScript,
   updateScript,
   validateScript,
+  validateStoryboard,
 } from "./story-engine.server";
 
 const storedRefSchema = z
@@ -79,3 +81,11 @@ export const regenerateScriptFn = createServerFn({ method: "POST" })
 export const validateScriptFn = createServerFn({ method: "POST" })
   .validator(z.object({ storyId: z.string().min(1) }))
   .handler(({ data }) => validateScript(data.storyId));
+
+export const validateStoryboardFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1) }))
+  .handler(({ data }) => validateStoryboard(data.storyId));
+
+export const regenerateSceneImageFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1), sceneId: z.string().min(1) }))
+  .handler(({ data }) => regenerateSceneImage(data.storyId, data.sceneId));

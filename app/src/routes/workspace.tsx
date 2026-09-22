@@ -10,12 +10,13 @@ import { Loader } from "@higgsfield/quanta/loader";
 import { toast } from "@higgsfield/quanta/sonner";
 import {
   ArrowLeft, ArrowUp, ArrowDown, Plus, Trash2, Wand2, Check,
-  Clapperboard, Film, Camera,
+  Clapperboard, Film, Camera, RefreshCw, Coins,
 } from "lucide-react";
 import { AppShell } from "@/layouts/app-shell";
 import { StepBar } from "@/components/story/step-bar";
-import { getStoryFn, updateScriptFn, regenerateScriptFn, validateScriptFn } from "@/lib/story.functions";
+import { getStoryFn, updateScriptFn, regenerateScriptFn, validateScriptFn, validateStoryboardFn, regenerateSceneImageFn } from "@/lib/story.functions";
 import type { StoryDTO, SceneDTO } from "@/lib/story-engine.server";
+import { sceneDurationSeconds, videoClipCostCredits } from "@/lib/story-templates";
 
 export const Route = createFileRoute("/workspace")({
   component: WorkspacePage,
@@ -39,6 +40,8 @@ function WorkspacePage() {
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [stageError, setStageError] = useState<string | null>(null);
+  const [regeneratingScene, setRegeneratingScene] = useState<string | null>(null);
 
   const { data: story, isLoading } = useQuery({
     queryKey: ["workspace", storyId],
@@ -46,7 +49,12 @@ function WorkspacePage() {
     enabled: !!storyId,
     refetchInterval: (query) => {
       const s = query.state.data as StoryDTO | undefined;
-      if (s && (s.status === "generating" || s.status === "assembling")) return 4000;
+      if (!s) return false;
+      if (s.status === "generating" || s.status === "assembling") return 4000;
+      if (s.status === "storyboard") {
+        const final = s.scenes.every((scene) => scene.status === "image_ready" || scene.status === "failed");
+        return final ? false : 4000;
+      }
       return false;
     },
   });
@@ -149,7 +157,7 @@ function WorkspacePage() {
     try {
       await validateScriptFn({ data: { storyId: story.id } });
       await invalidate();
-      toast.success("Script validated — launching production");
+      toast.success("Script validated — building the storyboard");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not validate the script.");
     } finally {
@@ -169,6 +177,40 @@ function WorkspacePage() {
       toast.error(error instanceof Error ? error.message : "Could not regenerate the script.");
     } finally {
       setRegenerating(false);
+    }
+  };
+
+  const handleValidateStoryboard = async () => {
+    if (!story || story.status !== "storyboard") return;
+    setStageError(null);
+    setValidating(true);
+    try {
+      await validateStoryboardFn({ data: { storyId: story.id } });
+      await invalidate();
+      toast.success("Storyboard validated — recording your scenes");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not validate the storyboard.";
+      setStageError(message);
+      toast.error(message);
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const handleRegenerateSceneImage = async (sceneId: string) => {
+    if (!story || story.status !== "storyboard") return;
+    setStageError(null);
+    setRegeneratingScene(sceneId);
+    try {
+      await regenerateSceneImageFn({ data: { storyId: story.id, sceneId } });
+      await invalidate();
+      toast.success("Regenerating storyboard image…");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not regenerate the image.";
+      setStageError(message);
+      toast.error(message);
+    } finally {
+      setRegeneratingScene(null);
     }
   };
 
@@ -233,6 +275,15 @@ function WorkspacePage() {
                 onSave={() => void handleSave()}
                 onValidate={() => void handleValidate()}
                 onRegenerate={() => void handleRegenerate()}
+              />
+            ) : story.status === "storyboard" ? (
+              <StoryboardView
+                story={story}
+                error={stageError}
+                validating={validating}
+                regeneratingScene={regeneratingScene}
+                onValidate={() => void handleValidateStoryboard()}
+                onRegenerateImage={(sceneId) => void handleRegenerateSceneImage(sceneId)}
               />
             ) : story.status === "generating" || story.status === "assembling" ? (
               <ProductionView story={story} />
@@ -376,6 +427,117 @@ function ScriptEditor({
         <p className="mt-2 text-right text-xs text-q-text-tertiary">
           {editor.scenes.length} scene{editor.scenes.length === 1 ? "" : "s"} · production starts only after validation.
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Storyboard (Lot B) ──────────────────────────────────────────────────────
+
+function StoryboardView({
+  story, error, validating, regeneratingScene,
+  onValidate, onRegenerateImage,
+}: {
+  story: StoryDTO;
+  error: string | null;
+  validating: boolean;
+  regeneratingScene: string | null;
+  onValidate: () => void;
+  onRegenerateImage: (sceneId: string) => void;
+}) {
+  const secondsPerScene = sceneDurationSeconds(story.durationSec, story.sceneCount);
+  const videoCost = story.scenes.length * videoClipCostCredits(secondsPerScene);
+  const allReady = story.scenes.length > 0 && story.scenes.every((s) => s.status === "image_ready");
+  const failedAny = story.scenes.some((s) => s.status === "failed");
+
+  return (
+    <div className="space-y-4">
+      {/* Cost + gate info */}
+      <div className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <Typography as="h2" variant="title-sm-semi-bold" color="primary">
+              Storyboard
+            </Typography>
+            <Typography as="p" variant="caption-sm-regular" color="secondary" className="mt-1">
+              One image per scene · {secondsPerScene}s clip per scene · videos cost ~{Math.round(videoCost)} credits
+            </Typography>
+          </div>
+          {failedAny && (
+            <span className="rounded-full bg-red-500/10 px-3 py-1 text-xs text-red-500">
+              Regenerate failed images before launching
+            </span>
+          )}
+        </div>
+        {error && (
+          <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm text-red-500" role="alert">
+            {error}
+          </div>
+        )}
+        <div className="mt-4">
+          <Button
+            variant="marketingPrimary"
+            size="md"
+            disabled={!allReady || validating}
+            onClick={onValidate}
+          >
+            {validating ? <Loader size="xs" color="neutral" /> : <Icon as={Film} size="sm" />}
+            {allReady ? `Validate storyboard & record (${Math.round(videoCost)} credits)` : "Waiting for all images…"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Per-image grid */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        {story.scenes.map((scene) => {
+          const busy = regeneratingScene === scene.id;
+          return (
+            <div key={scene.id} className="overflow-hidden rounded-xl border border-q-border-subtle bg-q-background-secondary">
+              {scene.imageUrl ? (
+                <img src={scene.imageUrl} alt={`Storyboard ${scene.idx + 1}`} className="aspect-[9/16] w-full object-cover" />
+              ) : (
+                <div className="flex aspect-[9/16] w-full items-center justify-center bg-q-background-secondary">
+                  {scene.status === "failed" ? (
+                    <Typography as="p" variant="caption-sm-regular" color="danger" className="px-3 text-center">
+                      {scene.error ?? "Failed"}
+                    </Typography>
+                  ) : (
+                    <Loader size="sm" color="neutral" aria-label={`Generating scene ${scene.idx + 1}`} />
+                  )}
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-2 p-2.5">
+                <span className="text-xs font-medium text-q-text-primary">Scene {scene.idx + 1}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] ${
+                    scene.status === "image_ready" ? "bg-emerald-500/10 text-emerald-500" :
+                    scene.status === "failed" ? "bg-red-500/10 text-red-500" :
+                    "bg-q-transparent-light-10 text-q-text-secondary"
+                  }`}>
+                    {scene.status === "image_ready" ? "Ready" : scene.status === "failed" ? "Failed" : "Generating"}
+                  </span>
+                  {scene.status !== "image_generating" && (
+                    <button
+                      type="button"
+                      disabled={busy || validating}
+                      onClick={() => onRegenerateImage(scene.id)}
+                      aria-label={`Regenerate image for scene ${scene.idx + 1}`}
+                      title="Regenerate this image (1.5 credits)"
+                      className="rounded p-1 text-q-text-secondary hover:bg-q-transparent-light-10 disabled:opacity-50"
+                    >
+                      {busy ? <Loader size="xs" color="neutral" /> : <Icon as={RefreshCw} size="sm" />}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-2 text-xs text-q-text-tertiary">
+        <Icon as={Coins} size="sm" />
+        Regenerating an image costs 1.5 credits. Reorder the scenes in the Script step if needed.
       </div>
     </div>
   );

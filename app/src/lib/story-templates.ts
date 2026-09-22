@@ -244,6 +244,34 @@ export function stepLabel(stepId: string | undefined | null): string {
   return idx >= 0 ? STORY_STEPS[idx].label : "Old format";
 }
 
+// ─── Cost model (confirmed Higgsfield pricing, 21 Sep 2026) ──────────────────
+// Image (Nano Banana 2): 1.5 credits. Video (Seedance 2.0): 4.5 credits/second,
+// any integer duration 4–15 s. Lot B fixes the old 5/10 s snap with the exact
+// per-scene duration, so requested length and delivered length match.
+
+export const IMAGE_COST_CREDITS = 1.5;
+export const VIDEO_COST_PER_SECOND = 4.5;
+export const MIN_CLIP_SECONDS = 4;
+export const MAX_CLIP_SECONDS = 15;
+
+/** Exact seconds per scene: requested duration spread evenly, clamped to 4–15. */
+export function sceneDurationSeconds(durationSec: number, sceneCount: number): number {
+  return Math.max(
+    MIN_CLIP_SECONDS,
+    Math.min(MAX_CLIP_SECONDS, Math.round(durationSec / Math.max(1, sceneCount))),
+  );
+}
+
+export function videoClipCostCredits(durationSec: number): number {
+  return durationSec * VIDEO_COST_PER_SECOND;
+}
+
+/** Full estimated cost of a film (before regenerations): storyboard + videos. */
+export function estimateFilmCost(durationSec: number, sceneCount: number): number {
+  const clipCost = videoClipCostCredits(sceneDurationSeconds(durationSec, sceneCount));
+  return sceneCount * IMAGE_COST_CREDITS + sceneCount * clipCost;
+}
+
 export function getTemplate(id: string): StoryTemplate {
   return STORY_TEMPLATES.find((template) => template.id === id) ?? STORY_TEMPLATES[0];
 }

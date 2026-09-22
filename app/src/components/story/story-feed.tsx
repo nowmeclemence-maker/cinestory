@@ -95,6 +95,29 @@ export function StoryTile({
     );
   }
 
+  if (story.status === "storyboard") {
+    // Storyboard step: images are generating / awaiting per-image validation.
+    const storyboard = firstSceneImage(story);
+    return (
+      <div className="relative flex aspect-[9/16] w-full flex-col overflow-hidden rounded-lg border border-q-border-subtle bg-q-background-secondary">
+        <StepChip story={story} />
+        {storyboard ? (
+          <img src={storyboard} alt={story.title ?? "Storyboard"} className="min-h-0 flex-1 w-full object-cover" />
+        ) : (
+          <div className="flex min-h-0 flex-1 items-center justify-center">
+            <Loader size="sm" color="neutral" />
+          </div>
+        )}
+        <div className="flex items-center justify-between gap-2 p-2.5">
+          <p className="line-clamp-1 text-xs font-medium text-q-text-primary">{story.title ?? story.idea}</p>
+          <a href={`/workspace?story=${story.id}`}>
+            <Button variant="marketingPrimary" size="sm">Review storyboard</Button>
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   if (story.status === "failed") {
     return (
       <div className="relative">
