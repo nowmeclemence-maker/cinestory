@@ -9,15 +9,15 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
-import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as StudioRouteImport } from './routes/studio'
 import { Route as WorkspaceRouteImport } from './routes/workspace'
+import { Route as VoicesRouteImport } from './routes/voices'
 import { Route as TemplatesRouteImport } from './routes/templates'
+import { Route as StudioRouteImport } from './routes/studio'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as SeriesRouteImport } from './routes/series'
+import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as PromptsRouteImport } from './routes/prompts'
 import { Route as ProjectsRouteImport } from './routes/projects'
-import { Route as SeriesRouteImport } from './routes/series'
 import { Route as LocationsRouteImport } from './routes/locations'
 import { Route as ExportsRouteImport } from './routes/exports'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -25,27 +25,27 @@ import { Route as CreditsRouteImport } from './routes/credits'
 import { Route as CharactersRouteImport } from './routes/characters'
 import { Route as BillingRouteImport } from './routes/billing'
 import { Route as AssetsRouteImport } from './routes/assets'
-import { Route as VoicesRouteImport } from './routes/voices'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiUserRouteImport } from './routes/api/user'
 import { Route as ApiStoryMediaSplatRouteImport } from './routes/api/story-media/$'
-import { Route as ApiMediaUploadRouteImport } from './routes/api/media/upload'
 import { Route as ApiMediaUploadAudioRouteImport } from './routes/api/media/upload-audio'
+import { Route as ApiMediaUploadRouteImport } from './routes/api/media/upload'
 import { Route as ApiStoriesIdFinalizeRouteImport } from './routes/api/stories/$id/finalize'
 import { Route as ApiStoriesIdAssembleRouteImport } from './routes/api/stories/$id/assemble'
 
-const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
-  id: '/sitemap.xml',
-  path: '/sitemap.xml',
+const WorkspaceRoute = WorkspaceRouteImport.update({
+  id: '/workspace',
+  path: '/workspace',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
-  id: '/robots.txt',
-  path: '/robots.txt',
+const VoicesRoute = VoicesRouteImport.update({
+  id: '/voices',
+  path: '/voices',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const TemplatesRoute = TemplatesRouteImport.update({
+  id: '/templates',
+  path: '/templates',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StudioRoute = StudioRouteImport.update({
@@ -53,14 +53,19 @@ const StudioRoute = StudioRouteImport.update({
   path: '/studio',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WorkspaceRoute = WorkspaceRouteImport.update({
-  id: '/workspace',
-  path: '/workspace',
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TemplatesRoute = TemplatesRouteImport.update({
-  id: '/templates',
-  path: '/templates',
+const SeriesRoute = SeriesRouteImport.update({
+  id: '/series',
+  path: '/series',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
+  id: '/robots.txt',
+  path: '/robots.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PromptsRoute = PromptsRouteImport.update({
@@ -71,11 +76,6 @@ const PromptsRoute = PromptsRouteImport.update({
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SeriesRoute = SeriesRouteImport.update({
-  id: '/series',
-  path: '/series',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LocationsRoute = LocationsRouteImport.update({
@@ -113,9 +113,9 @@ const AssetsRoute = AssetsRouteImport.update({
   path: '/assets',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VoicesRoute = VoicesRouteImport.update({
-  id: '/voices',
-  path: '/voices',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUserRoute = ApiUserRouteImport.update({
@@ -128,14 +128,14 @@ const ApiStoryMediaSplatRoute = ApiStoryMediaSplatRouteImport.update({
   path: '/api/story-media/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiMediaUploadRoute = ApiMediaUploadRouteImport.update({
-  id: '/api/media/upload',
-  path: '/api/media/upload',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiMediaUploadAudioRoute = ApiMediaUploadAudioRouteImport.update({
   id: '/api/media/upload-audio',
   path: '/api/media/upload-audio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMediaUploadRoute = ApiMediaUploadRouteImport.update({
+  id: '/api/media/upload',
+  path: '/api/media/upload',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiStoriesIdFinalizeRoute = ApiStoriesIdFinalizeRouteImport.update({
@@ -151,22 +151,22 @@ const ApiStoriesIdAssembleRoute = ApiStoriesIdAssembleRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/studio': typeof StudioRoute
-  '/workspace': typeof WorkspaceRoute
-  '/templates': typeof TemplatesRoute
-  '/prompts': typeof PromptsRoute
-  '/projects': typeof ProjectsRoute
-  '/series': typeof SeriesRoute
-  '/locations': typeof LocationsRoute
-  '/exports': typeof ExportsRoute
-  '/dashboard': typeof DashboardRoute
-  '/credits': typeof CreditsRoute
-  '/characters': typeof CharactersRoute
-  '/billing': typeof BillingRoute
   '/assets': typeof AssetsRoute
-  '/voices': typeof VoicesRoute
+  '/billing': typeof BillingRoute
+  '/characters': typeof CharactersRoute
+  '/credits': typeof CreditsRoute
+  '/dashboard': typeof DashboardRoute
+  '/exports': typeof ExportsRoute
+  '/locations': typeof LocationsRoute
+  '/projects': typeof ProjectsRoute
+  '/prompts': typeof PromptsRoute
   '/robots.txt': typeof RobotsDottxtRoute
+  '/series': typeof SeriesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/studio': typeof StudioRoute
+  '/templates': typeof TemplatesRoute
+  '/voices': typeof VoicesRoute
+  '/workspace': typeof WorkspaceRoute
   '/api/user': typeof ApiUserRoute
   '/api/media/upload': typeof ApiMediaUploadRoute
   '/api/media/upload-audio': typeof ApiMediaUploadAudioRoute
@@ -176,22 +176,22 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/studio': typeof StudioRoute
-  '/workspace': typeof WorkspaceRoute
-  '/templates': typeof TemplatesRoute
-  '/prompts': typeof PromptsRoute
-  '/projects': typeof ProjectsRoute
-  '/series': typeof SeriesRoute
-  '/locations': typeof LocationsRoute
-  '/exports': typeof ExportsRoute
-  '/dashboard': typeof DashboardRoute
-  '/credits': typeof CreditsRoute
-  '/characters': typeof CharactersRoute
-  '/billing': typeof BillingRoute
   '/assets': typeof AssetsRoute
-  '/voices': typeof VoicesRoute
+  '/billing': typeof BillingRoute
+  '/characters': typeof CharactersRoute
+  '/credits': typeof CreditsRoute
+  '/dashboard': typeof DashboardRoute
+  '/exports': typeof ExportsRoute
+  '/locations': typeof LocationsRoute
+  '/projects': typeof ProjectsRoute
+  '/prompts': typeof PromptsRoute
   '/robots.txt': typeof RobotsDottxtRoute
+  '/series': typeof SeriesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/studio': typeof StudioRoute
+  '/templates': typeof TemplatesRoute
+  '/voices': typeof VoicesRoute
+  '/workspace': typeof WorkspaceRoute
   '/api/user': typeof ApiUserRoute
   '/api/media/upload': typeof ApiMediaUploadRoute
   '/api/media/upload-audio': typeof ApiMediaUploadAudioRoute
@@ -202,21 +202,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/workspace': typeof WorkspaceRoute
-  '/templates': typeof TemplatesRoute
-  '/prompts': typeof PromptsRoute
-  '/projects': typeof ProjectsRoute
-  '/series': typeof SeriesRoute
-  '/locations': typeof LocationsRoute
-  '/exports': typeof ExportsRoute
-  '/dashboard': typeof DashboardRoute
-  '/credits': typeof CreditsRoute
-  '/characters': typeof CharactersRoute
-  '/billing': typeof BillingRoute
   '/assets': typeof AssetsRoute
-  '/voices': typeof VoicesRoute
+  '/billing': typeof BillingRoute
+  '/characters': typeof CharactersRoute
+  '/credits': typeof CreditsRoute
+  '/dashboard': typeof DashboardRoute
+  '/exports': typeof ExportsRoute
+  '/locations': typeof LocationsRoute
+  '/projects': typeof ProjectsRoute
+  '/prompts': typeof PromptsRoute
   '/robots.txt': typeof RobotsDottxtRoute
+  '/series': typeof SeriesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/studio': typeof StudioRoute
+  '/templates': typeof TemplatesRoute
+  '/voices': typeof VoicesRoute
+  '/workspace': typeof WorkspaceRoute
   '/api/user': typeof ApiUserRoute
   '/api/media/upload': typeof ApiMediaUploadRoute
   '/api/media/upload-audio': typeof ApiMediaUploadAudioRoute
@@ -228,22 +229,22 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/studio'
-    | '/workspace'
-    | '/templates'
-    | '/prompts'
-    | '/projects'
-    | '/series'
-    | '/locations'
-    | '/exports'
-    | '/dashboard'
-    | '/credits'
-    | '/characters'
-    | '/billing'
     | '/assets'
-    | '/voices'
+    | '/billing'
+    | '/characters'
+    | '/credits'
+    | '/dashboard'
+    | '/exports'
+    | '/locations'
+    | '/projects'
+    | '/prompts'
     | '/robots.txt'
+    | '/series'
     | '/sitemap.xml'
+    | '/studio'
+    | '/templates'
+    | '/voices'
+    | '/workspace'
     | '/api/user'
     | '/api/media/upload'
     | '/api/media/upload-audio'
@@ -253,22 +254,22 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/studio'
-    | '/workspace'
-    | '/templates'
-    | '/prompts'
-    | '/projects'
-    | '/series'
-    | '/locations'
-    | '/exports'
-    | '/dashboard'
-    | '/credits'
-    | '/characters'
-    | '/billing'
     | '/assets'
-    | '/voices'
+    | '/billing'
+    | '/characters'
+    | '/credits'
+    | '/dashboard'
+    | '/exports'
+    | '/locations'
+    | '/projects'
+    | '/prompts'
     | '/robots.txt'
+    | '/series'
     | '/sitemap.xml'
+    | '/studio'
+    | '/templates'
+    | '/voices'
+    | '/workspace'
     | '/api/user'
     | '/api/media/upload'
     | '/api/media/upload-audio'
@@ -278,22 +279,22 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/studio'
-    | '/workspace'
-    | '/templates'
-    | '/prompts'
-    | '/projects'
-    | '/series'
-    | '/locations'
-    | '/exports'
-    | '/dashboard'
-    | '/credits'
-    | '/characters'
-    | '/billing'
     | '/assets'
-    | '/voices'
+    | '/billing'
+    | '/characters'
+    | '/credits'
+    | '/dashboard'
+    | '/exports'
+    | '/locations'
+    | '/projects'
+    | '/prompts'
     | '/robots.txt'
+    | '/series'
     | '/sitemap.xml'
+    | '/studio'
+    | '/templates'
+    | '/voices'
+    | '/workspace'
     | '/api/user'
     | '/api/media/upload'
     | '/api/media/upload-audio'
@@ -304,22 +305,22 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  StudioRoute: typeof StudioRoute
-  WorkspaceRoute: typeof WorkspaceRoute
-  TemplatesRoute: typeof TemplatesRoute
-  PromptsRoute: typeof PromptsRoute
-  ProjectsRoute: typeof ProjectsRoute
-  SeriesRoute: typeof SeriesRoute
-  LocationsRoute: typeof LocationsRoute
-  ExportsRoute: typeof ExportsRoute
-  DashboardRoute: typeof DashboardRoute
-  CreditsRoute: typeof CreditsRoute
-  CharactersRoute: typeof CharactersRoute
-  BillingRoute: typeof BillingRoute
   AssetsRoute: typeof AssetsRoute
-  VoicesRoute: typeof VoicesRoute
+  BillingRoute: typeof BillingRoute
+  CharactersRoute: typeof CharactersRoute
+  CreditsRoute: typeof CreditsRoute
+  DashboardRoute: typeof DashboardRoute
+  ExportsRoute: typeof ExportsRoute
+  LocationsRoute: typeof LocationsRoute
+  ProjectsRoute: typeof ProjectsRoute
+  PromptsRoute: typeof PromptsRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
+  SeriesRoute: typeof SeriesRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  StudioRoute: typeof StudioRoute
+  TemplatesRoute: typeof TemplatesRoute
+  VoicesRoute: typeof VoicesRoute
+  WorkspaceRoute: typeof WorkspaceRoute
   ApiUserRoute: typeof ApiUserRoute
   ApiMediaUploadRoute: typeof ApiMediaUploadRoute
   ApiMediaUploadAudioRoute: typeof ApiMediaUploadAudioRoute
@@ -330,25 +331,25 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/sitemap.xml': {
-      id: '/sitemap.xml'
-      path: '/sitemap.xml'
-      fullPath: '/sitemap.xml'
-      preLoaderRoute: typeof SitemapDotxmlRouteImport
+    '/workspace': {
+      id: '/workspace'
+      path: '/workspace'
+      fullPath: '/workspace'
+      preLoaderRoute: typeof WorkspaceRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/robots.txt': {
-      id: '/robots.txt'
-      path: '/robots.txt'
-      fullPath: '/robots.txt'
-      preLoaderRoute: typeof RobotsDottxtRouteImport
+    '/voices': {
+      id: '/voices'
+      path: '/voices'
+      fullPath: '/voices'
+      preLoaderRoute: typeof VoicesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/templates': {
+      id: '/templates'
+      path: '/templates'
+      fullPath: '/templates'
+      preLoaderRoute: typeof TemplatesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/studio': {
@@ -358,18 +359,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StudioRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/workspace': {
-      id: '/workspace'
-      path: '/workspace'
-      fullPath: '/workspace'
-      preLoaderRoute: typeof WorkspaceRouteImport
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/templates': {
-      id: '/templates'
-      path: '/templates'
-      fullPath: '/templates'
-      preLoaderRoute: typeof TemplatesRouteImport
+    '/series': {
+      id: '/series'
+      path: '/series'
+      fullPath: '/series'
+      preLoaderRoute: typeof SeriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/robots.txt': {
+      id: '/robots.txt'
+      path: '/robots.txt'
+      fullPath: '/robots.txt'
+      preLoaderRoute: typeof RobotsDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/prompts': {
@@ -384,13 +392,6 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof ProjectsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/series': {
-      id: '/series'
-      path: '/series'
-      fullPath: '/series'
-      preLoaderRoute: typeof SeriesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/locations': {
@@ -442,11 +443,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AssetsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/voices': {
-      id: '/voices'
-      path: '/voices'
-      fullPath: '/voices'
-      preLoaderRoute: typeof VoicesRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/user': {
@@ -463,18 +464,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiStoryMediaSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/media/upload': {
-      id: '/api/media/upload'
-      path: '/api/media/upload'
-      fullPath: '/api/media/upload'
-      preLoaderRoute: typeof ApiMediaUploadRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/media/upload-audio': {
       id: '/api/media/upload-audio'
       path: '/api/media/upload-audio'
       fullPath: '/api/media/upload-audio'
       preLoaderRoute: typeof ApiMediaUploadAudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/media/upload': {
+      id: '/api/media/upload'
+      path: '/api/media/upload'
+      fullPath: '/api/media/upload'
+      preLoaderRoute: typeof ApiMediaUploadRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/stories/$id/finalize': {
@@ -496,22 +497,22 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  StudioRoute: StudioRoute,
-  WorkspaceRoute: WorkspaceRoute,
-  TemplatesRoute: TemplatesRoute,
-  PromptsRoute: PromptsRoute,
-  ProjectsRoute: ProjectsRoute,
-  SeriesRoute: SeriesRoute,
-  LocationsRoute: LocationsRoute,
-  ExportsRoute: ExportsRoute,
-  DashboardRoute: DashboardRoute,
-  CreditsRoute: CreditsRoute,
-  CharactersRoute: CharactersRoute,
-  BillingRoute: BillingRoute,
   AssetsRoute: AssetsRoute,
-  VoicesRoute: VoicesRoute,
+  BillingRoute: BillingRoute,
+  CharactersRoute: CharactersRoute,
+  CreditsRoute: CreditsRoute,
+  DashboardRoute: DashboardRoute,
+  ExportsRoute: ExportsRoute,
+  LocationsRoute: LocationsRoute,
+  ProjectsRoute: ProjectsRoute,
+  PromptsRoute: PromptsRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
+  SeriesRoute: SeriesRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  StudioRoute: StudioRoute,
+  TemplatesRoute: TemplatesRoute,
+  VoicesRoute: VoicesRoute,
+  WorkspaceRoute: WorkspaceRoute,
   ApiUserRoute: ApiUserRoute,
   ApiMediaUploadRoute: ApiMediaUploadRoute,
   ApiMediaUploadAudioRoute: ApiMediaUploadAudioRoute,

@@ -1,6 +1,7 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import { ApiJobError } from "@higgsfield/fnf/errors";
 import { createLlmClient } from "@higgsfield/fnf";
+import { d1ClaimStore, withClaim } from "./story-claims";
 import { createStory, getStory } from "./story-engine.server";
 import type { StoryDTO } from "./story-engine.server";
 import { createServerFnf } from "./fnf.server";
@@ -263,24 +264,40 @@ export async function startEpisode(seriesId: string, idx: number): Promise<Story
     .filter(Boolean)
     .join("\n");
 
-  const story = await createStory({ idea, templateId: "micro-drama", locationId: "match-template", durationSec: 60 });
+  // Phase 1: only the request that wins the claim creates the episode —
+  // a double click cannot start two stories for the same episode.
+  const created = await withClaim(
+    d1ClaimStore(db),
+    `series-episode:${seriesId}:${idx}`,
+    async () => {
+      const story = await createStory({ idea, templateId: "micro-drama", locationId: "match-template", durationSec: 60 });
 
-  // Pre-cast the recurring characters.
-  for (const character of bible.characters) {
-    if (!character.characterId) continue;
-    await db
-      .prepare(`INSERT INTO story_characters (story_id, character_id) VALUES (?, ?) ON CONFLICT(story_id, character_id) DO NOTHING`)
-      .bind(story.id, character.characterId)
-      .run();
-  }
+      // Pre-cast the recurring characters.
+      for (const character of bible.characters) {
+        if (!character.characterId) continue;
+        await db
+          .prepare(`INSERT INTO story_characters (story_id, character_id) VALUES (?, ?) ON CONFLICT(story_id, character_id) DO NOTHING`)
+          .bind(story.id, character.characterId)
+          .run();
+      }
 
-  await db
-    .prepare("INSERT INTO series_episodes (id, series_id, idx, logline, story_id) VALUES (?,?,?,?,?)")
-    .bind(crypto.randomUUID(), seriesId, idx, episode.logline, story.id)
-    .run();
-  await db.prepare("UPDATE series SET updated_at = datetime('now') WHERE id = ?").bind(seriesId).run();
+      await db
+        .prepare("INSERT INTO series_episodes (id, series_id, idx, logline, story_id) VALUES (?,?,?,?,?)")
+        .bind(crypto.randomUUID(), seriesId, idx, episode.logline, story.id)
+        .run();
+      await db.prepare("UPDATE series SET updated_at = datetime('now') WHERE id = ?").bind(seriesId).run();
+      return story;
+    },
+  );
+  if (created) return getStory(created.id);
 
-  return getStory(story.id);
+  // Lost the claim — the winner created the episode; read it back.
+  const winner = await db
+    .prepare("SELECT story_id FROM series_episodes WHERE series_id = ? AND idx = ?")
+    .bind(seriesId, idx)
+    .first<{ story_id: string }>();
+  if (winner?.story_id) return getStory(winner.story_id);
+  throw new ApiJobError("episode_busy", "Another request is starting this episode; please retry.", { status: 409 });
 }
 
 export async function deleteSeries(seriesId: string): Promise<void> {

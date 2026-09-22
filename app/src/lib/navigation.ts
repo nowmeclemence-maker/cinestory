@@ -8,37 +8,37 @@ import {
   CreditCard, Receipt, User, Settings, HelpCircle,
   Sparkles, Tv,
 } from "lucide-react";
-import type { IconGlyph } from "@higgsfield/quanta/icon";
+import type { LucideIcon } from "lucide-react";
 
 export interface NavItem {
   label: string;
   path: string;
-  icon: IconGlyph;
+  icon: LucideIcon;
   badge?: string;
   children?: NavItem[];
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard as IconGlyph },
-  { label: "Story Workspace", path: "/workspace", icon: Clapperboard as IconGlyph },
-  { label: "Projects", path: "/projects", icon: Film as IconGlyph },
-  { label: "Series", path: "/series", icon: Tv as IconGlyph },
-  { label: "Templates", path: "/templates", icon: Library as IconGlyph },
-  { label: "Characters", path: "/characters", icon: Users as IconGlyph },
-  { label: "Locations", path: "/locations", icon: MapPin as IconGlyph },
-  { label: "AI Assets", path: "/assets", icon: Image as IconGlyph },
-  { label: "Voice Library", path: "/voices", icon: Mic as IconGlyph },
-  { label: "Music Library", path: "/music", icon: Music as IconGlyph },
-  { label: "Prompt Library", path: "/prompts", icon: Sparkles as IconGlyph },
-  { label: "Exports", path: "/exports", icon: Download as IconGlyph },
+  { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+  { label: "Story Workspace", path: "/workspace", icon: Clapperboard },
+  { label: "Projects", path: "/projects", icon: Film },
+  { label: "Series", path: "/series", icon: Tv },
+  { label: "Templates", path: "/templates", icon: Library },
+  { label: "Characters", path: "/characters", icon: Users },
+  { label: "Locations", path: "/locations", icon: MapPin },
+  { label: "AI Assets", path: "/assets", icon: Image },
+  { label: "Voice Library", path: "/voices", icon: Mic },
+  { label: "Music Library", path: "/music", icon: Music },
+  { label: "Prompt Library", path: "/prompts", icon: Sparkles },
+  { label: "Exports", path: "/exports", icon: Download },
 ];
 
 export const ACCOUNT_ITEMS: NavItem[] = [
-  { label: "Credits", path: "/credits", icon: CreditCard as IconGlyph },
-  { label: "Billing", path: "/billing", icon: Receipt as IconGlyph },
-  { label: "Account", path: "/account", icon: User as IconGlyph },
-  { label: "Settings", path: "/settings", icon: Settings as IconGlyph },
-  { label: "Help", path: "/help", icon: HelpCircle as IconGlyph },
+  { label: "Credits", path: "/credits", icon: CreditCard },
+  { label: "Billing", path: "/billing", icon: Receipt },
+  { label: "Account", path: "/account", icon: User },
+  { label: "Settings", path: "/settings", icon: Settings },
+  { label: "Help", path: "/help", icon: HelpCircle },
 ];
 
 export const PAGE_TITLES: Record<string, string> = {

@@ -48,7 +48,6 @@ interface SceneEdit {
 function WorkspacePage() {
   const { story: storyId } = Route.useSearch();
   const qc = useQueryClient();
-  const [editor, setEditor] = useState<{ title: string; hook: string; cta: string; scenes: SceneEdit[] } | null>(null);
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -98,24 +97,30 @@ function WorkspacePage() {
   );
 
   // Load draft content into the editor once the story lands in the Script step.
-  useEffect(() => {
-    if (!story || story.status !== "draft") {
-      setEditor(null);
-      return;
-    }
-    setEditor({
-      title: story.title ?? "",
-      hook: story.hook ?? "",
-      cta: story.cta ?? "",
-      scenes: story.scenes.map((scene) => ({
-        id: scene.id,
-        description: scene.description,
-        camera: scene.camera ?? "",
-        dialogue: scene.dialogue ?? "",
-        onScreenText: scene.onScreenText ?? "",
-      })),
-    });
-  }, [story?.id, story?.status]);
+  // Done as render-time state adjustment (conditional + converging), keyed on
+  // story id + status so live edits are never clobbered by a refetch.
+  const [editor, setEditor] = useState<{ title: string; hook: string; cta: string; scenes: SceneEdit[] } | null>(null);
+  const [editorKey, setEditorKey] = useState("");
+  const draftKey = story && story.status === "draft" ? `${story.id}:draft` : "none";
+  if (draftKey !== editorKey) {
+    setEditorKey(draftKey);
+    setEditor(
+      draftKey === "none"
+        ? null
+        : {
+            title: story?.title ?? "",
+            hook: story?.hook ?? "",
+            cta: story?.cta ?? "",
+            scenes: (story?.scenes ?? []).map((scene) => ({
+              id: scene.id,
+              description: scene.description,
+              camera: scene.camera ?? "",
+              dialogue: scene.dialogue ?? "",
+              onScreenText: scene.onScreenText ?? "",
+            })),
+          },
+    );
+  }
 
   const sceneCount = useMemo(
     () => (story && story.status === "draft" ? (editor?.scenes.length ?? story.sceneCount) : story?.sceneCount ?? 0),

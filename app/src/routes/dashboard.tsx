@@ -6,6 +6,7 @@ import { Button } from "@higgsfield/quanta/button";
 import { Icon } from "@higgsfield/quanta/icon";
 import { Loader } from "@higgsfield/quanta/loader";
 import { Plus, Film, Users, MapPin, TrendingUp } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { AppShell } from "@/layouts/app-shell";
 import { listStoriesFn } from "@/lib/story.functions";
 import { useStoriesFeed } from "@/components/story/use-stories-feed";
@@ -101,7 +102,7 @@ function DashboardPage() {
   );
 }
 
-function StatCard({ icon: IconGlyph, label, value }: { icon: any; label: string; value: number | string }) {
+function StatCard({ icon: IconGlyph, label, value }: { icon: LucideIcon; label: string; value: number | string }) {
   return (
     <Card className="p-4">
       <div className="flex items-center gap-3">

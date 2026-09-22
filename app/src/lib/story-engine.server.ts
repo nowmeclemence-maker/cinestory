@@ -5,6 +5,7 @@ import type { MediaRef } from "@higgsfield/fnf/media";
 import { createServerFnf } from "./fnf.server";
 import type { GenerationMediaRef, SceneAspectRatio } from "./generation/port";
 import { getGenerationProvider } from "./generation/registry.server";
+import { d1ClaimStore, inMemoryClaimStore, withClaim } from "./story-claims";
 import {
   DEFAULT_DURATION_SECONDS,
   estimateFilmCost,
@@ -19,6 +20,14 @@ import {
 
 /** Every CineStory scene is shot vertically. */
 const SCENE_ASPECT_RATIO: SceneAspectRatio = "9:16";
+
+// Phase 1: distributed claim store backing every paid submit path. With D1 the
+// CAS goes through SQLite (atomic upsert); the in-memory store is a dev-only
+// fallback when D1 is unavailable.
+const devClaimStore = inMemoryClaimStore();
+function claimStore(db: D1Database | null) {
+  return db ? d1ClaimStore(db) : devClaimStore;
+}
 
 export interface StoredRef {
   ref: MediaRef;
@@ -519,7 +528,7 @@ export async function updateScript(
     throw new ApiJobError("script_empty", "A script needs at least one scene.", { status: 400 });
   }
 
-  let parsed: Partial<Script> | null = null;
+  let parsed: Partial<Script> | null;
   try {
     parsed = story.script_json ? (JSON.parse(story.script_json) as Partial<Script>) : null;
   } catch {
@@ -755,17 +764,20 @@ export async function validateStoryboard(storyId: string): Promise<StoryDTO> {
 
   const template = getTemplate(story.template_id);
   const location = getLocation(story.location_id, template);
-  await updateStory(db, storyId, {
-    status: "generating",
-    current_step: "video",
-    progress_label: `Recording scene 1 of ${scenes.length}…`,
+  // Phase 1: only the request that wins the claim may launch the paid video jobs.
+  await withClaim(claimStore(db), `story:${storyId}:videos`, async () => {
+    await updateStory(db, storyId, {
+      status: "generating",
+      current_step: "video",
+      progress_label: `Recording scene 1 of ${scenes.length}…`,
+    });
+    const running = { ...story, status: "generating" as const };
+    await Promise.all(
+      scenes.map((scene) =>
+        submitSceneVideo(db, running, scene, scene.image_url ?? "", template, location),
+      ),
+    );
   });
-  const running = { ...story, status: "generating" as const };
-  await Promise.all(
-    scenes.map((scene) =>
-      submitSceneVideo(db, running, scene, scene.image_url ?? "", template, location),
-    ),
-  );
   return getStory(storyId);
 }
 
@@ -784,9 +796,22 @@ export async function regenerateSceneImage(storyId: string, sceneId: string): Pr
   if (!scene) {
     throw new ApiJobError("scene_not_found", "Scene not found.", { status: 404 });
   }
+  // Phase 1: a scene already generating must not get a second job (double click).
+  if (scene.status === "image_generating" && scene.image_job_id) {
+    return getStory(storyId);
+  }
   const template = getTemplate(story.template_id);
   const location = getLocation(story.location_id, template);
-  await submitSceneImage(story.owner_key ?? "", db, storyId, scene, story, template, location);
+  // Claim is bound to the CURRENT job id, so a second click on the same state
+  // cannot start a second job; once the winner advances the job id, the guard
+  // above blocks further duplicates.
+  await withClaim(
+    claimStore(db),
+    `scene:${storyId}:${sceneId}:image:${scene.image_job_id ?? "new"}`,
+    async () => {
+      await submitSceneImage(story.owner_key ?? "", db, storyId, scene, story, template, location);
+    },
+  );
   return getStory(storyId);
 }
 
@@ -1035,6 +1060,8 @@ export async function generateCharacterPortrait(storyId: string, characterId: st
   const cast = await loadCast(db, storyId);
   const member = cast.find((c) => c.characterId === characterId);
   if (!member) throw new ApiJobError("not_in_cast", "This character is not in the story's cast.", { status: 404 });
+  // Phase 1: a portrait job already in flight must not be launched twice.
+  if (member.portraitJobId) return listStoryCharacters(storyId);
 
   const appearance =
     [member.appearance.trim(), member.clothing.trim() ? `wearing ${member.clothing.trim()}` : ""]
@@ -1042,17 +1069,20 @@ export async function generateCharacterPortrait(storyId: string, characterId: st
       .join(", ") || "a distinctive cinematic character";
   const instruction = `Photoreal 3:4 cinematic character portrait of ${member.name}: ${appearance}. ${member.personality ? `Personality: ${member.personality}. ` : ""}Studio lighting, shallow depth of field, neutral background, face clearly visible.`;
 
-  const job = await getGenerationProvider().submitSceneImage({
-    instruction,
-    references: [],
-    aspectRatio: "3:4",
+  // Phase 1: only the request that wins the claim submits the portrait job.
+  await withClaim(claimStore(db), `character:${characterId}:portrait`, async () => {
+    const job = await getGenerationProvider().submitSceneImage({
+      instruction,
+      references: [],
+      aspectRatio: "3:4",
+    });
+    if (db) {
+      await db
+        .prepare("UPDATE characters SET portrait_job_id = ? WHERE id = ?")
+        .bind(job.jobId, characterId)
+        .run();
+    }
   });
-  if (db) {
-    await db
-      .prepare("UPDATE characters SET portrait_job_id = ? WHERE id = ?")
-      .bind(job.jobId, characterId)
-      .run();
-  }
   return listStoryCharacters(storyId);
 }
 
@@ -1220,15 +1250,20 @@ export async function generateSceneLocation(storyId: string, sceneId: string): P
   const scenes = await loadScenes(db, storyId);
   const scene = scenes.find((s) => s.id === sceneId);
   if (!scene) throw new ApiJobError("scene_not_found", "Scene not found.", { status: 404 });
+  // Phase 1: a set-image job already in flight must not be launched twice.
+  if (scene.location_job_id) return getStory(storyId);
   const description = scene.location_description ?? getLocation(story.location_id, getTemplate(story.template_id)).description;
 
-  const instruction = `Dark-free cinematic 9:16 establishing shot of the set, NO people or characters: ${description}. Consistent location for a ${getTemplate(story.template_id).title} short film.`;
-  const job = await getGenerationProvider().submitSceneImage({
-    instruction,
-    references: [],
-    aspectRatio: SCENE_ASPECT_RATIO,
+  // Phase 1: only the request that wins the claim submits the set job.
+  await withClaim(claimStore(db), `scene:${storyId}:${sceneId}:set`, async () => {
+    const instruction = `Dark-free cinematic 9:16 establishing shot of the set, NO people or characters: ${description}. Consistent location for a ${getTemplate(story.template_id).title} short film.`;
+    const job = await getGenerationProvider().submitSceneImage({
+      instruction,
+      references: [],
+      aspectRatio: SCENE_ASPECT_RATIO,
+    });
+    await updateScene(db, storyId, sceneId, { location_job_id: job.jobId });
   });
-  await updateScene(db, storyId, sceneId, { location_job_id: job.jobId });
   return getStory(storyId);
 }
 
@@ -1293,17 +1328,20 @@ export async function validateLocations(storyId: string): Promise<StoryDTO> {
 
   const template = getTemplate(story.template_id);
   const location = getLocation(story.location_id, template);
-  await updateStory(db, storyId, {
-    status: "storyboard",
-    current_step: "storyboard",
-    progress_label: "Storyboarding scene 1…",
+  // Phase 1: only the request that wins the claim may launch the paid image jobs.
+  await withClaim(claimStore(db), `story:${storyId}:images`, async () => {
+    await updateStory(db, storyId, {
+      status: "storyboard",
+      current_step: "storyboard",
+      progress_label: "Storyboarding scene 1…",
+    });
+    const running = { ...story, status: "storyboard" as const };
+    await Promise.all(
+      scenes.map((scene) =>
+        submitSceneImage(running.owner_key ?? "", db, storyId, scene, running, template, location),
+      ),
+    );
   });
-  const running = { ...story, status: "storyboard" as const };
-  await Promise.all(
-    scenes.map((scene) =>
-      submitSceneImage(running.owner_key ?? "", db, storyId, scene, running, template, location),
-    ),
-  );
   return getStory(storyId);
 }
 
@@ -1360,7 +1398,10 @@ export async function setStoryVoiceover(storyId: string, url: string | null): Pr
 export async function validateAudio(storyId: string): Promise<StoryDTO> {
   const { db, story } = await loadOwnedStory(storyId);
   if (story.status !== "audio") return getStory(storyId);
-  await markAssemblyStarted(storyId);
+  // Phase 1: validateAudio only transitions the story; the RUN is claimed by
+  // the dispatch route (markAssemblyStarted CAS) so exactly one container
+  // dispatch happens per film.
+  await updateStory(db, storyId, { status: "assembling", progress_label: "Cutting the final film…" });
   return getStory(storyId);
 }
 
@@ -1784,17 +1825,26 @@ export async function listStories(projectId?: string): Promise<StoryDTO[]> {
   return results;
 }
 
-export async function markAssemblyStarted(storyId: string): Promise<void> {
+/**
+ * Phase 1 — claim the assembly run with a conditional upsert: only the request
+ * whose write CHANGES the job row (from absent/stopped to 'running') may
+ * dispatch the container. Concurrent triggers return false and stay silent.
+ */
+export async function markAssemblyStarted(storyId: string): Promise<boolean> {
   const db = await database();
-  await updateStory(db, storyId, { status: "assembling", progress_label: "Cutting the final film…" });
   if (db) {
-    await db
+    const result = await db
       .prepare(
-        "INSERT INTO story_assembly_jobs (id, status) VALUES (?, 'running') ON CONFLICT(id) DO UPDATE SET status='running', error=NULL",
+        `INSERT INTO story_assembly_jobs (id, status) VALUES (?, 'running')
+         ON CONFLICT(id) DO UPDATE SET status = 'running', error = NULL
+         WHERE story_assembly_jobs.status NOT IN ('running', 'done')`,
       )
       .bind(storyId)
       .run();
+    if (result.meta.changes === 0) return false;
   }
+  await updateStory(db, storyId, { status: "assembling", progress_label: "Cutting the final film…" });
+  return true;
 }
 
 export async function finalizeStory(

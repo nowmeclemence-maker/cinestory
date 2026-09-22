@@ -35,7 +35,12 @@ export const Route = createFileRoute("/api/stories/$id/assemble")({
           );
         }
 
-        await markAssemblyStarted(storyId);
+        // Phase 1: the conditional upsert claims the run — only the winner
+        // dispatches the container; duplicates return ok without acting.
+        const claimed = await markAssemblyStarted(storyId);
+        if (!claimed) {
+          return Response.json({ ok: true, alreadyRunning: true });
+        }
 
         const appBaseUrl = new URL(request.url).origin;
         const stub = container.getByName("cinestory-assembler");

@@ -257,7 +257,7 @@ function SeriesDetail({ seriesId }: { seriesId: string }) {
     setStarting(idx);
     try {
       const story = await startEpisodeFn({ data: { seriesId, idx } });
-      window.location.href = `/workspace?story=${story.id}`;
+      window.location.assign(`/workspace?story=${story.id}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not start the episode.");
       setStarting(null);

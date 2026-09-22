@@ -68,7 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={item.path}
                   selected={currentPath.startsWith(item.path)}
                   onClick={() => handleNav(item.path)}
-                  start={<IconTile as={item.icon as any} gradient="teal" />}
+                  start={<IconTile as={item.icon} gradient="teal" />}
                   title={item.label}
                 />
               ))}
@@ -85,7 +85,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={item.path}
                   selected={currentPath.startsWith(item.path)}
                   onClick={() => handleNav(item.path)}
-                  start={<IconTile as={item.icon as any} gradient="neutral" />}
+                  start={<IconTile as={item.icon} gradient="neutral" />}
                   title={item.label}
                 />
               ))}

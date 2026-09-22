@@ -216,7 +216,7 @@ function Hero() {
   useEffect(() => {
     const timer = setInterval(() => setTextIdx((i) => (i + 1) % lines.length), 2500);
     return () => clearInterval(timer);
-  }, []);
+  }, [lines.length]);
 
   return (
     <section className="relative min-h-[90vh] overflow-hidden bg-black">
