@@ -12,6 +12,7 @@ import {
   proposeLocations,
   regenerateSceneImage,
   regenerateScript,
+  remasterStory,
   setSceneDialogue,
   setSceneLocation,
   setStoryMusic,
@@ -227,6 +228,10 @@ export const setStoryVoiceoverFn = createServerFn({ method: "POST" })
 export const validateAudioFn = createServerFn({ method: "POST" })
   .validator(z.object({ storyId: z.string().min(1) }))
   .handler(({ data }) => validateAudio(data.storyId));
+
+export const remasterStoryFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1) }))
+  .handler(({ data }) => remasterStory(data.storyId));
 
 export const listMusicTracksFn = createServerFn({ method: "POST" }).handler(async () => {
   const { listMusicTracks } = await import("./services/music");

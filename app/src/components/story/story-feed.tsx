@@ -179,6 +179,9 @@ export function StoryTile({
           failureLabel={statusLabel(story)}
         />
         <StepChip story={story} />
+        <a href={`/workspace?story=${story.id}`} className="absolute inset-x-0 bottom-2 z-10 flex justify-center">
+          <Button variant="tertiary" size="sm">Review & remaster</Button>
+        </a>
       </div>
     );
   }

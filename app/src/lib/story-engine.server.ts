@@ -628,11 +628,88 @@ export async function regenerateScript(storyId: string): Promise<StoryDTO> {
 }
 
 /**
- * Lot C — script validated: the story moves to the Characters (casting) step.
- * The user proposes/picks the cast and gives each member a reference photo or
- * generated portrait BEFORE any image is spent (validateCharacters launches
- * the storyboard once the cast is ready).
+ * Remaster — clone any existing story (e.g. an old pipeline story that failed
+ * on credits) into the MODERN step pipeline at the Script step, preserving the
+ * script, cast info, idea, template and settings. Nothing is generated: the
+ * new draft runs through Script → Cast → Sets → … gates from scratch.
  */
+export async function remasterStory(storyId: string): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  const oldScenes = await loadScenes(db, storyId);
+
+  const script: Script = tryParseJson<Script | null>(story.script_json, null) ?? {
+    title: story.title ?? "Untitled story",
+    hook: story.hook ?? "",
+    cta: story.cta ?? "",
+    musicMood: story.music_mood ?? "cinematic, emotional",
+    colorGrade: story.color_grade ?? "warm cinematic",
+    scenes: oldScenes.map((scene) => ({
+      description: scene.description,
+      camera: scene.camera ?? "",
+      dialogue: scene.dialogue ?? "",
+      onScreenText: scene.on_screen_text ?? "",
+    })),
+  };
+  if (script.scenes.length === 0) {
+    throw new ApiJobError("story_incomplete", "This story has no script to remaster.", { status: 400 });
+  }
+
+  const id = crypto.randomUUID();
+  const durationSec = story.duration_sec > 0 ? story.duration_sec : DEFAULT_DURATION_SECONDS;
+  const sceneRows = buildSceneRows(id, script);
+  const estimatedCost = estimateFilmCost(durationSec, sceneRows.length);
+  const now = new Date().toISOString();
+
+  const row: StoryRow = {
+    id,
+    project_id: story.project_id,
+    idea: story.idea,
+    template_id: story.template_id,
+    location_id: story.location_id,
+    duration_sec: durationSec,
+    scene_count: sceneRows.length,
+    status: "draft",
+    progress_label: null,
+    current_step: "script",
+    estimated_cost: estimatedCost,
+    spent_cost: 0,
+    title: script.title,
+    hook: script.hook,
+    cta: script.cta,
+    music_mood: script.musicMood,
+    color_grade: script.colorGrade,
+    script_json: JSON.stringify(script),
+    selfie_ref: story.selfie_ref,
+    reference_ref: story.reference_ref,
+    final_video_key: null,
+    final_poster_key: null,
+    error: null,
+    created_at: now,
+    updated_at: now,
+  };
+
+  if (!db) {
+    devState().stories.set(id, row);
+    devState().scenes.set(id, sceneRows);
+  } else {
+    await db
+      .prepare(
+        `INSERT INTO stories (id, owner_key, project_id, idea, template_id, location_id, duration_sec, scene_count, status, progress_label, current_step, estimated_cost, spent_cost, title, hook, cta, music_mood, color_grade, script_json, selfie_ref, reference_ref)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .bind(
+        id, story.owner_key ?? "",
+        row.project_id, row.idea, row.template_id, row.location_id, row.duration_sec,
+        row.scene_count, row.status, row.progress_label, row.current_step,
+        row.estimated_cost, row.spent_cost,
+        row.title, row.hook, row.cta, row.music_mood, row.color_grade,
+        row.script_json, row.selfie_ref, row.reference_ref,
+      )
+      .run();
+    await db.batch(sceneRows.map((scene) => insertSceneStatement(db, scene)));
+  }
+  return getStory(id);
+}
 export async function validateScript(storyId: string): Promise<StoryDTO> {
   const { db, story } = await loadOwnedStory(storyId);
   if (story.status !== "draft") return getStory(storyId);

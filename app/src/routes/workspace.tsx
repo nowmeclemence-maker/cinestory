@@ -11,7 +11,7 @@ import { toast } from "@higgsfield/quanta/sonner";
 import {
   ArrowLeft, ArrowUp, ArrowDown, Plus, Trash2, Wand2, Check,
   Clapperboard, Film, Camera, RefreshCw, Coins, UserRound, ImagePlus, Users,
-  Volume2, Music as IconMusic, Mic, Upload,
+  Volume2, Music as IconMusic, Mic, Upload, RotateCcw,
 } from "lucide-react";
 import { AppShell } from "@/layouts/app-shell";
 import { StepBar } from "@/components/story/step-bar";
@@ -21,7 +21,7 @@ import {
   unlinkCharacterFn, generateCharacterPortraitFn, validateCharactersFn, addCharacterImageFn,
   listLibraryCharactersFn, proposeLocationsFn, setSceneLocationFn, generateSceneLocationFn,
   validateLocationsFn, setSceneDialogueFn, setStoryMusicFn, setStoryVoiceoverFn, validateAudioFn,
-  listMusicTracksFn, createMusicTrackFn,
+  listMusicTracksFn, createMusicTrackFn, remasterStoryFn,
 } from "@/lib/story.functions";
 import { uploadAsset, uploadAudioAsset } from "@/lib/fnf.browser";
 import { triggerAssembly } from "@/lib/story.browser";
@@ -55,6 +55,7 @@ function WorkspacePage() {
   const [stageError, setStageError] = useState<string | null>(null);
   const [regeneratingScene, setRegeneratingScene] = useState<string | null>(null);
   const [castBusy, setCastBusy] = useState<string | null>(null);
+  const [remastering, setRemastering] = useState(false);
 
   const { data: story, isLoading } = useQuery({
     queryKey: ["workspace", storyId],
@@ -530,6 +531,22 @@ function WorkspacePage() {
     }
   }, [story?.id, story?.status]);
 
+  const handleRemaster = async () => {
+    if (!story || story.status !== "failed") return;
+    setRemastering(true);
+    try {
+      const remastered = await remasterStoryFn({ data: { storyId: story.id } });
+      toast.success("Remastered — the script is ready in the modern pipeline");
+      window.location.href = `/workspace?story=${remastered.id}`;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not remaster the story.";
+      setStageError(message);
+      toast.error(message);
+    } finally {
+      setRemastering(false);
+    }
+  };
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -661,9 +678,25 @@ function WorkspacePage() {
                 <Typography as="p" variant="body-sm-regular" color="secondary" className="mt-2">
                   {story.error ?? "An unknown error happened during production."}
                 </Typography>
-                <div className="mt-4 flex gap-2">
+                {story.scenes.filter((scene) => scene.error).length > 0 && (
+                  <div className="mt-4 space-y-1.5">
+                    <Typography as="p" variant="caption-sm-regular" color="secondary">
+                      What happened, scene by scene:
+                    </Typography>
+                    {story.scenes.filter((scene) => scene.error).map((scene) => (
+                      <div key={scene.id} className="rounded-lg border border-red-500/20 bg-q-background-primary px-3 py-2 text-sm">
+                        <span className="font-medium text-q-text-primary">Scene {scene.idx + 1}: </span>
+                        <span className="text-q-text-secondary">{scene.error}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-4 flex flex-wrap gap-2">
                   <a href="/studio"><Button variant="tertiary">Back to stories</Button></a>
-                  <a href={`/dashboard`}><Button variant="primary">Dashboard</Button></a>
+                  <Button variant="marketingPrimary" disabled={remastering} onClick={() => void handleRemaster()}>
+                    {remastering ? <Loader size="xs" color="neutral" /> : <Icon as={RotateCcw} size="sm" />}
+                    Remaster in the modern pipeline
+                  </Button>
                 </div>
               </div>
             ) : (
