@@ -506,7 +506,12 @@ async function getDisplayCredits(): Promise<number> {
   try {
     const profile = createServerFnf().profile;
     const credits = await profile.getCredits();
-    return Number.isFinite(credits) ? credits : Number.POSITIVE_INFINITY;
+    // ProfileCredits may be a plain display number or { credits: number }.
+    const value =
+      typeof credits === "number"
+        ? credits
+        : (credits as { credits?: number } | null)?.credits;
+    return typeof value === "number" && Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
   } catch {
     return Number.POSITIVE_INFINITY;
   }
