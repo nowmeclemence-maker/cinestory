@@ -77,32 +77,24 @@ const PRICING = [
     name: "Free",
     price: "$0",
     credits: "100 credits/mo",
-    features: ["Basic story templates", "720p export", "1 character", "Community support"],
+    features: ["All 12 story templates", "720p storyboard previews", "1 character & 1 set", "Community support"],
     cta: "Get Started",
     popular: false,
   },
   {
-    name: "Starter",
+    name: "Pro",
     price: "$19",
     credits: "1,000 credits/mo",
-    features: ["All templates", "1080p export", "Unlimited characters", "Location library", "Email support"],
-    cta: "Subscribe",
+    features: ["Everything in Free", "1080p exports", "Unlimited characters & sets", "Music & voiceover library", "Email support"],
+    cta: "Upgrade to Pro",
     popular: true,
   },
   {
-    name: "Pro",
+    name: "Studio",
     price: "$79",
     credits: "5,000 credits/mo",
-    features: ["Everything in Starter", "4K export", "AI voice library", "Music library", "Priority support"],
-    cta: "Subscribe",
-    popular: false,
-  },
-  {
-    name: "Unlimited",
-    price: "$249",
-    credits: "25,000 credits/mo",
-    features: ["Everything in Pro", "API access", "Custom templates", "Dedicated support", "Team workspace"],
-    cta: "Contact Sales",
+    features: ["Everything in Pro", "4K exports", "Series mode (bible → episodes)", "Custom templates", "Priority support"],
+    cta: "Go Studio",
     popular: false,
   },
 ];
@@ -426,7 +418,7 @@ function Pricing() {
           </div>
         </FadeIn>
 
-        <div className="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {PRICING.map((plan, i) => (
             <FadeIn key={plan.name} delay={i * 100}>
               <div className={`relative rounded-2xl border p-6 transition-all duration-300 ${

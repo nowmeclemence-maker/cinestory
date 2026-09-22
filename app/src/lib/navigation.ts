@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Clapperboard, Film, Users, MapPin,
   Image, Music, Mic, Volume2, Library, Download,
   CreditCard, Receipt, User, Settings, HelpCircle,
-  Sparkles, Tv,
+  Sparkles, Tv, Tag,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -36,6 +36,7 @@ export const NAV_ITEMS: NavItem[] = [
 export const ACCOUNT_ITEMS: NavItem[] = [
   { label: "Credits", path: "/credits", icon: CreditCard },
   { label: "Billing", path: "/billing", icon: Receipt },
+  { label: "Pricing", path: "/pricing", icon: Tag },
   { label: "Account", path: "/account", icon: User },
   { label: "Settings", path: "/settings", icon: Settings },
   { label: "Help", path: "/help", icon: HelpCircle },

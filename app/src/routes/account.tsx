@@ -4,7 +4,7 @@ import { Typography } from "@higgsfield/quanta/typography";
 import { Button } from "@higgsfield/quanta/button";
 import { Icon } from "@higgsfield/quanta/icon";
 import { Loader } from "@higgsfield/quanta/loader";
-import { User as IconUser, LogOut, Coins, Receipt, ArrowRight } from "lucide-react";
+import { User as IconUser, LogOut, Coins, Receipt, ArrowRight, Tag } from "lucide-react";
 import { AppShell } from "@/layouts/app-shell";
 
 export const Route = createFileRoute("/account")({ component: AccountPage });
@@ -122,6 +122,16 @@ function AccountPage() {
               <div>
                 <Typography as="h3" variant="label-md-medium" color="primary">Credits</Typography>
                 <Typography as="p" variant="caption-sm-regular" color="secondary">Balance and transactions</Typography>
+              </div>
+              <Icon as={ArrowRight} size="sm" className="ml-auto text-q-text-tertiary" />
+            </div>
+          </a>
+          <a href="/pricing" className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-4 transition-colors hover:bg-q-background-tertiary">
+            <div className="flex items-center gap-3">
+              <Icon as={Tag} size="md" className="text-q-brand-primary" />
+              <div>
+                <Typography as="h3" variant="label-md-medium" color="primary">Pricing</Typography>
+                <Typography as="p" variant="caption-sm-regular" color="secondary">Plans, credits and upgrade</Typography>
               </div>
               <Icon as={ArrowRight} size="sm" className="ml-auto text-q-text-tertiary" />
             </div>

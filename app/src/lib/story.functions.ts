@@ -294,3 +294,17 @@ export const deleteSeriesFn = createServerFn({ method: "POST" })
     const { deleteSeries } = await import("./series-engine.server");
     return deleteSeries(data.seriesId);
   });
+
+// ─── Subscriptions / pricing ─────────────────────────────────────────────────
+
+export const getSubscriptionFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { getSubscription } = await import("./services/credits");
+  return getSubscription();
+});
+
+export const selectPlanFn = createServerFn({ method: "POST" })
+  .validator(z.object({ planId: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { selectPlan } = await import("./services/credits");
+    return selectPlan(data.planId);
+  });

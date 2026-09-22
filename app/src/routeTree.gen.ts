@@ -19,6 +19,7 @@ import { Route as SeriesRouteImport } from './routes/series'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as PromptsRouteImport } from './routes/prompts'
 import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as MusicRouteImport } from './routes/music'
 import { Route as LocationsRouteImport } from './routes/locations'
 import { Route as HelpRouteImport } from './routes/help'
@@ -85,6 +86,11 @@ const PromptsRoute = PromptsRouteImport.update({
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PricingRoute = PricingRouteImport.update({
+  id: '/pricing',
+  path: '/pricing',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MusicRoute = MusicRouteImport.update({
@@ -185,6 +191,7 @@ export interface FileRoutesByFullPath {
   '/help': typeof HelpRoute
   '/locations': typeof LocationsRoute
   '/music': typeof MusicRoute
+  '/pricing': typeof PricingRoute
   '/projects': typeof ProjectsRoute
   '/prompts': typeof PromptsRoute
   '/robots.txt': typeof RobotsDottxtRoute
@@ -214,6 +221,7 @@ export interface FileRoutesByTo {
   '/help': typeof HelpRoute
   '/locations': typeof LocationsRoute
   '/music': typeof MusicRoute
+  '/pricing': typeof PricingRoute
   '/projects': typeof ProjectsRoute
   '/prompts': typeof PromptsRoute
   '/robots.txt': typeof RobotsDottxtRoute
@@ -244,6 +252,7 @@ export interface FileRoutesById {
   '/help': typeof HelpRoute
   '/locations': typeof LocationsRoute
   '/music': typeof MusicRoute
+  '/pricing': typeof PricingRoute
   '/projects': typeof ProjectsRoute
   '/prompts': typeof PromptsRoute
   '/robots.txt': typeof RobotsDottxtRoute
@@ -275,6 +284,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/locations'
     | '/music'
+    | '/pricing'
     | '/projects'
     | '/prompts'
     | '/robots.txt'
@@ -304,6 +314,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/locations'
     | '/music'
+    | '/pricing'
     | '/projects'
     | '/prompts'
     | '/robots.txt'
@@ -333,6 +344,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/locations'
     | '/music'
+    | '/pricing'
     | '/projects'
     | '/prompts'
     | '/robots.txt'
@@ -363,6 +375,7 @@ export interface RootRouteChildren {
   HelpRoute: typeof HelpRoute
   LocationsRoute: typeof LocationsRoute
   MusicRoute: typeof MusicRoute
+  PricingRoute: typeof PricingRoute
   ProjectsRoute: typeof ProjectsRoute
   PromptsRoute: typeof PromptsRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
@@ -451,6 +464,13 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pricing': {
+      id: '/pricing'
+      path: '/pricing'
+      fullPath: '/pricing'
+      preLoaderRoute: typeof PricingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/music': {
@@ -587,6 +607,7 @@ const rootRouteChildren: RootRouteChildren = {
   HelpRoute: HelpRoute,
   LocationsRoute: LocationsRoute,
   MusicRoute: MusicRoute,
+  PricingRoute: PricingRoute,
   ProjectsRoute: ProjectsRoute,
   PromptsRoute: PromptsRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,

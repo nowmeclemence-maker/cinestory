@@ -111,3 +111,26 @@ export async function getSubscription(): Promise<Subscription | null> {
     currentPeriodEnd: (row.current_period_end as string) ?? "",
   };
 }
+
+/**
+ * Choose a plan. Stripe checkout is not wired yet, so this persists the
+ * selection as a 'requested' subscription row (the plan the user wants) —
+ * see migration 0004 for the subscriptions table.
+ */
+export async function selectPlan(planId: string): Promise<Subscription> {
+  const owner = await ownerKey();
+  const database = await db();
+  if (!database) throw new ApiJobError("db_unavailable", "Database unavailable.", { status: 503 });
+  await database
+    .prepare(
+      `INSERT INTO subscriptions (id, owner_key, plan_id, status) VALUES (?, ?, ?, 'requested')
+       ON CONFLICT(owner_key) DO UPDATE SET plan_id = excluded.plan_id, status = 'requested', updated_at = datetime('now')`,
+    )
+    .bind(crypto.randomUUID(), owner, planId)
+    .run();
+  const subscription = await getSubscription();
+  if (!subscription) {
+    throw new ApiJobError("plan_select_failed", "Could not save your plan.", { status: 500 });
+  }
+  return subscription;
+}
