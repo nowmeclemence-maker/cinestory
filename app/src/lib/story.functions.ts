@@ -254,3 +254,38 @@ export const deleteMusicTrackFn = createServerFn({ method: "POST" })
     const { deleteMusicTrack } = await import("./services/music");
     return deleteMusicTrack(data.id);
   });
+
+// ─── Lot F: series ───────────────────────────────────────────────────────────
+
+export const listSeriesFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { listSeries } = await import("./series-engine.server");
+  return listSeries();
+});
+
+export const getSeriesFn = createServerFn({ method: "POST" })
+  .validator(z.object({ seriesId: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { getSeries } = await import("./series-engine.server");
+    return getSeries(data.seriesId);
+  });
+
+export const createSeriesFn = createServerFn({ method: "POST" })
+  .validator(z.object({ title: z.string().trim().min(1).max(120), manuscript: z.string().min(50).max(60000) }))
+  .handler(async ({ data }) => {
+    const { createSeries } = await import("./series-engine.server");
+    return createSeries(data.title, data.manuscript);
+  });
+
+export const startEpisodeFn = createServerFn({ method: "POST" })
+  .validator(z.object({ seriesId: z.string().min(1), idx: z.number().int().nonnegative() }))
+  .handler(async ({ data }) => {
+    const { startEpisode } = await import("./series-engine.server");
+    return startEpisode(data.seriesId, data.idx);
+  });
+
+export const deleteSeriesFn = createServerFn({ method: "POST" })
+  .validator(z.object({ seriesId: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { deleteSeries } = await import("./series-engine.server");
+    return deleteSeries(data.seriesId);
+  });

@@ -17,6 +17,7 @@ import { Route as WorkspaceRouteImport } from './routes/workspace'
 import { Route as TemplatesRouteImport } from './routes/templates'
 import { Route as PromptsRouteImport } from './routes/prompts'
 import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as SeriesRouteImport } from './routes/series'
 import { Route as LocationsRouteImport } from './routes/locations'
 import { Route as ExportsRouteImport } from './routes/exports'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -70,6 +71,11 @@ const PromptsRoute = PromptsRouteImport.update({
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SeriesRoute = SeriesRouteImport.update({
+  id: '/series',
+  path: '/series',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LocationsRoute = LocationsRouteImport.update({
@@ -150,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/templates': typeof TemplatesRoute
   '/prompts': typeof PromptsRoute
   '/projects': typeof ProjectsRoute
+  '/series': typeof SeriesRoute
   '/locations': typeof LocationsRoute
   '/exports': typeof ExportsRoute
   '/dashboard': typeof DashboardRoute
@@ -174,6 +181,7 @@ export interface FileRoutesByTo {
   '/templates': typeof TemplatesRoute
   '/prompts': typeof PromptsRoute
   '/projects': typeof ProjectsRoute
+  '/series': typeof SeriesRoute
   '/locations': typeof LocationsRoute
   '/exports': typeof ExportsRoute
   '/dashboard': typeof DashboardRoute
@@ -198,6 +206,7 @@ export interface FileRoutesById {
   '/templates': typeof TemplatesRoute
   '/prompts': typeof PromptsRoute
   '/projects': typeof ProjectsRoute
+  '/series': typeof SeriesRoute
   '/locations': typeof LocationsRoute
   '/exports': typeof ExportsRoute
   '/dashboard': typeof DashboardRoute
@@ -224,6 +233,7 @@ export interface FileRouteTypes {
     | '/templates'
     | '/prompts'
     | '/projects'
+    | '/series'
     | '/locations'
     | '/exports'
     | '/dashboard'
@@ -248,6 +258,7 @@ export interface FileRouteTypes {
     | '/templates'
     | '/prompts'
     | '/projects'
+    | '/series'
     | '/locations'
     | '/exports'
     | '/dashboard'
@@ -272,6 +283,7 @@ export interface FileRouteTypes {
     | '/templates'
     | '/prompts'
     | '/projects'
+    | '/series'
     | '/locations'
     | '/exports'
     | '/dashboard'
@@ -297,6 +309,7 @@ export interface RootRouteChildren {
   TemplatesRoute: typeof TemplatesRoute
   PromptsRoute: typeof PromptsRoute
   ProjectsRoute: typeof ProjectsRoute
+  SeriesRoute: typeof SeriesRoute
   LocationsRoute: typeof LocationsRoute
   ExportsRoute: typeof ExportsRoute
   DashboardRoute: typeof DashboardRoute
@@ -371,6 +384,13 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/series': {
+      id: '/series'
+      path: '/series'
+      fullPath: '/series'
+      preLoaderRoute: typeof SeriesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/locations': {
@@ -481,6 +501,7 @@ const rootRouteChildren: RootRouteChildren = {
   TemplatesRoute: TemplatesRoute,
   PromptsRoute: PromptsRoute,
   ProjectsRoute: ProjectsRoute,
+  SeriesRoute: SeriesRoute,
   LocationsRoute: LocationsRoute,
   ExportsRoute: ExportsRoute,
   DashboardRoute: DashboardRoute,

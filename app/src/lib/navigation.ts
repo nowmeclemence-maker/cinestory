@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Clapperboard, Film, Users, MapPin,
   Image, Music, Mic, Volume2, Library, Download,
   CreditCard, Receipt, User, Settings, HelpCircle,
-  Sparkles,
+  Sparkles, Tv,
 } from "lucide-react";
 import type { IconGlyph } from "@higgsfield/quanta/icon";
 
@@ -22,6 +22,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard as IconGlyph },
   { label: "Story Workspace", path: "/workspace", icon: Clapperboard as IconGlyph },
   { label: "Projects", path: "/projects", icon: Film as IconGlyph },
+  { label: "Series", path: "/series", icon: Tv as IconGlyph },
   { label: "Templates", path: "/templates", icon: Library as IconGlyph },
   { label: "Characters", path: "/characters", icon: Users as IconGlyph },
   { label: "Locations", path: "/locations", icon: MapPin as IconGlyph },
@@ -44,6 +45,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/workspace": "Story Workspace",
   "/projects": "Projects",
+  "/series": "Series",
   "/templates": "Templates",
   "/characters": "Character Library",
   "/locations": "Location Library",
