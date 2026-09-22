@@ -41,7 +41,16 @@ export interface SeriesDTO {
   createdAt: string;
   updatedAt: string;
   bible: Bible | null;
-  episodes: { idx: number; title: string; logline: string; storyId: string | null; storyStatus: string | null }[];
+  episodes: {
+    idx: number;
+    title: string;
+    logline: string;
+    storyId: string | null;
+    /** Raw story status (draft/characters/…/ready/failed) or null when not started. */
+    storyStatus: string | null;
+    /** Pipeline step id (script|characters|locations|storyboard|video|audio|assembly) or null. */
+    step: string | null;
+  }[];
 }
 
 interface SeriesRow {
@@ -284,16 +293,56 @@ export async function deleteSeries(seriesId: string): Promise<void> {
   ]);
 }
 
+/** Episode pipeline steps in order; maps to story.current_step values. */
+const PIPELINE_STEPS = ["script", "characters", "locations", "storyboard", "video", "audio", "assembly"] as const;
+
+/** Derive the display step of an episode from its linked story. */
+function storyStepOf(status: string | null | undefined, currentStep: string | null | undefined): string | null {
+  if (!status) return null;
+  if (status === "ready") return "assembly"; // all steps complete
+  if (status === "failed") return null; // failed — caller renders an error state
+  if (currentStep && (PIPELINE_STEPS as readonly string[]).includes(currentStep)) return currentStep;
+  // Legacy "old"-step stories: fall back from generation status.
+  if (status === "generating" || status === "audio" || status === "assembling") return "video";
+  if (status === "characters") return "characters";
+  if (status === "locations") return "locations";
+  if (status === "storyboard") return "storyboard";
+  if (status === "draft") return "script";
+  return null;
+}
+
 async function toDTO(db: D1Database, row: SeriesRow): Promise<SeriesDTO> {
   const bible = tryParseJson<Bible | null>(row.bible_json, null);
   const episodeRows = await db.prepare("SELECT * FROM series_episodes WHERE series_id = ? ORDER BY idx ASC").bind(row.id).all<SeriesEpisodeRow>();
   const episodeCount = episodeRows.results.length > 0 ? episodeRows.results.length : row.episode_count;
 
+  // Pull every linked story's lifecycle in one query for the episode strip.
+  const storyIds = episodeRows.results.map((e) => e.story_id).filter((id): id is string => Boolean(id));
+  const statusById = new Map<string, { status: string; step: string }>();
+  if (storyIds.length > 0) {
+    const placeholders = storyIds.map(() => "?").join(",");
+    const stories = await db
+      .prepare(`SELECT id, status, current_step FROM stories WHERE id IN (${placeholders})`)
+      .bind(...storyIds)
+      .all<{ id: string; status: string; current_step: string | null }>();
+    for (const story of stories.results) {
+      statusById.set(story.id, { status: story.status, step: story.current_step ?? story.status });
+    }
+  }
+
   const episodes: SeriesDTO["episodes"] = Array.from({ length: episodeCount }, (_, idx) => {
     const stored = episodeRows.results.find((e) => e.idx === idx);
     const title = bible?.episodes[idx]?.title ?? `Episode ${idx + 1}`;
     const logline = stored?.logline ?? bible?.episodes[idx]?.logline ?? "";
-    return { idx, title, logline, storyId: stored?.story_id ?? null, storyStatus: null };
+    const linked = stored?.story_id ? statusById.get(stored.story_id) : undefined;
+    return {
+      idx,
+      title,
+      logline,
+      storyId: stored?.story_id ?? null,
+      storyStatus: linked?.status ?? null,
+      step: linked ? storyStepOf(linked.status, linked.step) : null,
+    };
   });
 
   return {

@@ -8,7 +8,7 @@ import { Loader } from "@higgsfield/quanta/loader";
 import { Modal } from "@higgsfield/quanta/modal";
 import { toast } from "@higgsfield/quanta/sonner";
 import {
-  Clapperboard, Plus, Play, Trash2, BookOpen, Users, MapPin, Repeat, Upload,
+  Clapperboard, Plus, Play, Trash2, BookOpen, Users, MapPin, Repeat, Upload, Check,
 } from "lucide-react";
 import { AppShell } from "@/layouts/app-shell";
 import {
@@ -169,11 +169,88 @@ function SeriesList() {
 
 // ─── Detail ──────────────────────────────────────────────────────────────────
 
+const EPISODE_PIPELINE = [
+  { id: "script", label: "Script" },
+  { id: "characters", label: "Cast" },
+  { id: "locations", label: "Sets" },
+  { id: "storyboard", label: "Storyboard" },
+  { id: "video", label: "Video" },
+  { id: "audio", label: "Audio" },
+  { id: "assembly", label: "Final cut" },
+] as const;
+
+/** Per-episode pipeline strip: filled up to the current step, at a glance. */
+function EpisodePipeline({ step, storyStatus }: { step: string | null; storyStatus: string | null }) {
+  const isReady = storyStatus === "ready";
+  const isFailed = storyStatus === "failed";
+  const stepIdx = step ? EPISODE_PIPELINE.findIndex((s) => s.id === step) : -1;
+  const effectiveIdx = isReady ? EPISODE_PIPELINE.length - 1 : stepIdx;
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-1.5">
+        {EPISODE_PIPELINE.map((entry, idx) => {
+          const done = !isFailed && effectiveIdx >= 0 && idx < effectiveIdx;
+          const current = !isFailed && effectiveIdx >= 0 && idx === effectiveIdx;
+          return (
+            <div key={entry.id} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+              <span
+                className={`h-1.5 w-full rounded-full transition-colors ${
+                  isFailed && idx === Math.max(0, effectiveIdx)
+                    ? "bg-red-500"
+                    : done || (isReady && idx === EPISODE_PIPELINE.length - 1)
+                      ? "bg-emerald-500"
+                      : current
+                        ? "bg-q-brand-primary"
+                        : "bg-q-transparent-light-10"
+                }`}
+              />
+              <span
+                className={`whitespace-nowrap text-[10px] leading-none ${
+                  current ? "font-medium text-q-brand-primary" : done || isReady ? "text-q-text-secondary" : "text-q-text-tertiary"
+                }`}
+              >
+                {entry.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2">
+        {isReady ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-500">
+            <Check className="size-3" /> Ready to publish
+          </span>
+        ) : isFailed ? (
+          <span className="inline-flex items-center rounded-full bg-red-500/10 px-2.5 py-0.5 text-[11px] font-medium text-red-500">
+            Failed — open to see the cause
+          </span>
+        ) : step ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-q-brand-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-q-brand-primary">
+            <span className="size-1.5 animate-pulse rounded-full bg-q-brand-primary" />
+            In production · {EPISODE_PIPELINE[effectiveIdx]?.label}
+          </span>
+        ) : (
+          <span className="text-[11px] text-q-text-tertiary">Not started</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SeriesDetail({ seriesId }: { seriesId: string }) {
   const [starting, setStarting] = useState<number | null>(null);
   const { data: series, isLoading } = useQuery({
     queryKey: ["series", seriesId],
     queryFn: () => getSeriesFn({ data: { seriesId } }),
+    refetchInterval: (query) => {
+      const s = query.state.data as SeriesDTO | undefined;
+      if (!s) return false;
+      const active = s.episodes.some(
+        (episode) => episode.storyStatus && !["ready", "failed"].includes(episode.storyStatus),
+      );
+      return active ? 5000 : false;
+    },
   });
 
   const handleStartEpisode = async (idx: number) => {
@@ -309,6 +386,7 @@ function SeriesDetail({ seriesId }: { seriesId: string }) {
                       {episode.logline}
                     </Typography>
                   )}
+                  <EpisodePipeline step={episode.step} storyStatus={episode.storyStatus} />
                   {episode.storyId && (
                     <a href={`/workspace?story=${episode.storyId}`} className="mt-1 inline-block text-xs text-q-brand-primary hover:underline">
                       Open episode story →
