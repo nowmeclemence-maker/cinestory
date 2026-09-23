@@ -1,0 +1,80 @@
+# Mirror Sync: Higgsfield platform repo (apps-repos.higgs.ai) -> GitHub mirror.
+# Runs on a schedule (and manually via workflow_dispatch). Fetches every branch
+# from the platform repo and fast-forwards the matching branch on this mirror.
+# Never force-pushes: if a mirror branch has diverged it is skipped and logged.
+#
+# The platform token is stored as the Actions secret HIGGSFIELD_REPO_TOKEN
+# (repository-scoped, actions environment).
+
+name: Mirror Sync from Higgsfield
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mirror-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync from Higgsfield platform repo
+        env:
+          PLATFORM_TOKEN: ${{ secrets.HIGGSFIELD_REPO_TOKEN }}
+          PLATFORM_URL: https://apps-repos.higgs.ai/hfu-user31M19Hft5zAlaZiYdbSWpgw8fIc/cinestory-6c767f0e-a6a8-41a1-b745-d9d43fee8c1c.git
+        run: |
+          set -euo pipefail
+          git config user.name "CineStory Mirror Sync"
+          git config user.email "actions@users.noreply.github.com"
+
+          echo "::group::Fetch Higgsfield platform repo"
+          git -c http.extraHeader="Authorization: token ${PLATFORM_TOKEN}" \
+            fetch "${PLATFORM_URL}" --prune "+refs/heads/*:refs/remotes/platform/*"
+          echo "::endgroup::"
+
+          pushed=0
+          skipped=0
+
+          # Fast-forward every platform branch into the mirror (never force-push).
+          for br in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/platform/ | grep -v '^HEAD$'); do
+            platform_ref="refs/remotes/platform/${br}"
+            mirror_ref="refs/heads/${br}"
+
+            if git show-ref --verify --quiet "${mirror_ref}"; then
+              if ! git merge-base --is-ancestor "${mirror_ref}" "${platform_ref}"; then
+                echo "SKIP branch ${br}: mirror history diverged (manual review needed)"
+                skipped=$((skipped + 1))
+                continue
+              fi
+            fi
+
+            si=""
+            if ! git show-ref --verify --quiet "${mirror_ref}"; then si="--set-upstream"; fi
+            # shellcheck disable=SC2086
+            if git push origin "${platform_ref}:${mirror_ref}" ${si:-} 2>&1; then
+              echo "PUSHED branch ${br} -> ${mirror_ref}"
+              pushed=$((pushed + 1))
+            else
+              echo "ERROR pushing branch ${br}"
+              skipped=$((skipped + 1))
+            fi
+          done
+
+          # Sync tags (non-destructive).
+          git push origin --tags 2>&1 || true
+
+          echo "---"
+          echo "sync_ok pushed=${pushed} skipped=${skipped}"
