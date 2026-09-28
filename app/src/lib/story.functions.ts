@@ -156,18 +156,20 @@ export const updateCharacterSheetFn = createServerFn({ method: "POST" })
     return updateCharacter(data.characterId, data.data);
   });
 
-/** Append one reference photo to a character (from an app upload or library pick). */
+/** Append (or replace) a character's reference photo from an upload or library pick. */
 export const addCharacterImageFn = createServerFn({ method: "POST" })
   .validator(
     z.object({
       characterId: z.string().min(1),
       ref: z.any(),
       src: z.string(),
+      /** "Replace photo" semantics: the picked photo becomes THE reference. */
+      replace: z.boolean().optional(),
     }),
   )
   .handler(async ({ data }) => {
     const { appendCharacterReference } = await import("./services/characters");
-    return appendCharacterReference(data.characterId, { ref: data.ref, src: data.src });
+    return appendCharacterReference(data.characterId, { ref: data.ref, src: data.src }, { replace: data.replace });
   });
 
 /** The user's Character Library (server-side only — never bunded to the client). */

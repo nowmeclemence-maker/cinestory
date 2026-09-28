@@ -16,7 +16,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { attachErrorMessage, attachReference, isAttachable } from "@/lib/character-references";
+import { attachErrorMessage, attachReference, isAttachable, replaceReference } from "@/lib/character-references";
 
 // ─── D1 shim over bun:sqlite (no new dependencies) ───────────────────────────
 
@@ -321,5 +321,79 @@ describe("story cast step — 'Use my photo' attaches and persists", () => {
 
     const storyRow = db.query("SELECT current_step FROM stories WHERE id = ?").get("story-cast") as { current_step: string };
     expect(storyRow.current_step).toBe("locations");
+  });
+});
+
+// ─── "Replace photo" must actually replace (regression) ──────────────────────
+
+describe("replace semantics — 'Replace photo' changes the face", () => {
+  const first = { ref: { id: "media-old", type: "media_input" }, src: "https://cdn/old.png" };
+  const second = { ref: { id: "media-new", type: "media_input" }, src: "https://cdn/new.png" };
+
+  test("replacing drops the previous reference and keeps exactly one", () => {
+    const result = replaceReference([first], second);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.images).toHaveLength(1);
+    expect(result.images[0].src).toBe("https://cdn/new.png");
+  });
+
+  test("replacing with a non-attachable item is refused", () => {
+    const result = replaceReference([first], { src: "https://cdn/preview-only.png" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("no_reference");
+  });
+
+  test("replacing with the photo that is already the only reference is a no-op", () => {
+    const result = replaceReference([first], first);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("duplicate");
+  });
+
+  test("the persisted row holds only the new photo", async () => {
+    const { createCharacter, appendCharacterReference, getCharacter } = await import("@/lib/services/characters");
+
+    const character = await createCharacter({ name: "Mara" });
+    await appendCharacterReference(character.id, first);
+    await appendCharacterReference(character.id, second, { replace: true });
+
+    const persisted = await getCharacter(character.id);
+    expect(persisted.referenceImages).toHaveLength(1);
+    expect(persisted.referenceImages[0].ref.id).toBe("media-new");
+
+    const row = db.query("SELECT reference_images FROM characters WHERE id = ?").get(character.id) as {
+      reference_images: string;
+    };
+    const stored = JSON.parse(row.reference_images) as { ref: { id: string } }[];
+    expect(stored).toHaveLength(1);
+    expect(stored[0].ref.id).toBe("media-new");
+  });
+
+  test("after a replace the cast card renders the NEW face", async () => {
+    // Seed a cast member whose reference is the story photo…
+    const { createCharacter, appendCharacterReference } = await import("@/lib/services/characters");
+    db.run(
+      "INSERT INTO stories (id, owner_key, status, selfie_ref, created_at) VALUES (?,?,?,?,?)",
+      ["story-replace", OWNER, "characters", JSON.stringify({ ref: { id: "selfie-old" }, src: "https://cdn/story-me.png" }), "2026-09-28 12:00:00"],
+    );
+    const character = await createCharacter({ name: "Protagonist" });
+    db.run("INSERT INTO story_characters (story_id, character_id, scene_indices) VALUES (?,?,?)", [
+      "story-replace",
+      character.id,
+      null,
+    ]);
+    await appendCharacterReference(character.id, { ref: { id: "selfie-old" }, src: "https://cdn/story-me.png" });
+
+    // …then replace it, as the card's "Replace photo" button now does.
+    await appendCharacterReference(character.id, second, { replace: true });
+
+    const { listStoryCharacters } = await import("@/lib/story-engine.server");
+    const cast = await listStoryCharacters("story-replace");
+    const member = cast.find((m) => m.characterId === character.id);
+
+    // The face the card shows must be the replacement — the original bug left
+    // referenceImages[0] untouched, so the button appeared to do nothing.
+    expect(member?.portraitUrl).toBe("https://cdn/new.png");
+    expect(member?.hasReference).toBe(true);
   });
 });

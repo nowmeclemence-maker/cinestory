@@ -129,9 +129,13 @@ export async function updateCharacter(id: string, data: Partial<Character>): Pro
 export async function appendCharacterReference(
   characterId: string,
   image: { ref: unknown; src: string },
+  opts?: { replace?: boolean },
 ): Promise<Character> {
   const character = await getCharacter(characterId);
-  const images = [...character.referenceImages, image as CharacterImage];
+  const next = image as CharacterImage;
+  // `replace` is what the UI's "Replace photo" means: the card shows one face,
+  // so the new photo must become THE reference rather than an extra one.
+  const images = opts?.replace ? [next] : [...character.referenceImages, next];
   return updateCharacter(characterId, { referenceImages: images });
 }
 

@@ -327,7 +327,11 @@ function WorkspacePage() {
   // A reference photo arrives ALREADY uploaded by AssetLibraryModal (either a
   // fresh upload or a library pick), so the handler takes the ready { ref, src }
   // — never raw bytes. `ref` is what generation consumes; `src` is for display.
-  const handleAddReference = async (characterId: string, item: { ref?: unknown; src: string }) => {
+  const handleAddReference = async (
+    characterId: string,
+    item: { ref?: unknown; src: string },
+    opts?: { replace?: boolean },
+  ) => {
     if (!story) return;
     // Same rule as the Character Library form: a preview-only library item has
     // no submit-ready ref, so it is refused rather than stored faceless.
@@ -338,7 +342,9 @@ function WorkspacePage() {
     setCastBusy(characterId);
     setStageError(null);
     try {
-      await addCharacterImageFn({ data: { characterId, ref: item.ref, src: item.src } });
+      await addCharacterImageFn({
+        data: { characterId, ref: item.ref, src: item.src, replace: opts?.replace },
+      });
       await refreshCast();
       toast.success("Photo added — the character will be consistent from this face");
     } catch (error) {
@@ -654,7 +660,7 @@ function WorkspacePage() {
                 onLink={(characterId) => void handleLinkCharacter(characterId)}
                 onUnlink={(characterId) => void handleUnlinkCharacter(characterId)}
                 onPortrait={(characterId) => void handleGeneratePortrait(characterId)}
-                onAddReference={(characterId, item) => void handleAddReference(characterId, item)}
+                onAddReference={(characterId, item, opts) => void handleAddReference(characterId, item, opts)}
                 onUseSelfie={(characterId) => void handleUseSelfie(characterId)}
                 onValidate={() => void handleValidateCharacters()}
               />
@@ -1195,7 +1201,7 @@ function CastingView({
   onLink: (characterId: string) => void;
   onUnlink: (characterId: string) => void;
   onPortrait: (characterId: string) => void;
-  onAddReference: (characterId: string, item: { ref?: unknown; src: string }) => void;
+  onAddReference: (characterId: string, item: { ref?: unknown; src: string }, opts?: { replace?: boolean }) => void;
   onUseSelfie: (characterId: string) => void;
   onValidate: () => void;
 }) {
@@ -1358,7 +1364,7 @@ function CastingView({
                           items={libraryItems}
                           onUpload={uploadAsset}
                           pagination={{}}
-                          onSelect={(item) => onAddReference(member.characterId, { ref: item.ref, src: item.src })}
+                          onSelect={(item) => onAddReference(member.characterId, { ref: item.ref, src: item.src }, { replace: true })}
                           trigger={
                             <button
                               type="button"

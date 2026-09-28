@@ -15,7 +15,7 @@ import { AppShell } from "@/layouts/app-shell";
 import { AssetLibraryModal, type AssetLibraryItem } from "@/components/asset-library";
 import { UploadField } from "@/components/upload-field";
 import { mediaRefToAssetItem } from "@/lib/higgsfield-generation-results";
-import { attachErrorMessage, attachReference } from "@/lib/character-references";
+import { attachErrorMessage, attachReference, replaceReference } from "@/lib/character-references";
 import { uploadAsset } from "@/lib/fnf.browser";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -86,13 +86,17 @@ function CharactersPage() {
   // modal's existing Save persists them — cancelling changes nothing.
   const addReference = (selection: { ref?: unknown; src: string }) => {
     if (!editing) return;
-    const result = attachReference(editing.referenceImages, selection);
+    // The trigger reads "Add photo" when empty and "Replace photo" when filled —
+    // so the rule must match the label, or the shown face never changes.
+    const result = editing.referenceImages.length > 0
+      ? replaceReference(editing.referenceImages, selection)
+      : attachReference(editing.referenceImages, selection);
     if (!result.ok) {
       toast.error(attachErrorMessage(result.error));
       return;
     }
     setEditing({ ...editing, referenceImages: result.images });
-    toast.success("Photo added — press Save to keep it");
+    toast.success(editing.referenceImages.length > 0 ? "Photo replaced — press Save to keep it" : "Photo added — press Save to keep it");
   };
 
   // Named `applyMyPhoto`, not `useMyPhoto`: a `use*` prefix makes the linter
