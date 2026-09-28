@@ -32,6 +32,7 @@ import { ExamplePresets } from "@/components/example-presets";
 import type { GalleryItem } from "@/components/gallery";
 import { HeroComposition } from "@/components/hero-composition";
 import { IconTile } from "@/components/icon-tile";
+import { ACCOUNT_ITEMS, NAV_ITEMS } from "@/lib/navigation";
 import { MyProjects } from "@/components/my-projects";
 import type { MyProjectsProject } from "@/components/my-projects";
 import { ProjectActions } from "@/components/project-actions";
@@ -202,13 +203,13 @@ function StudioSidebar({
             <Sidebar.Item
               selected={view.kind === "home"}
               onClick={() => onViewChange({ kind: "home" })}
-              start={<IconTile as={IconHomeFilled} gradient="blue" />}
+              start={<IconTile as={IconHomeFilled} gradient="brand" />}
               title="Home"
             />
             <Sidebar.Item
               selected={view.kind === "all"}
               onClick={() => onViewChange({ kind: "all" })}
-              start={<IconTile as={IconImagesFilled} gradient="purple" />}
+              start={<IconTile as={IconImagesFilled} gradient="ember" />}
               title="All Generations"
             />
           </Sidebar.SectionItems>
@@ -277,6 +278,45 @@ function StudioSidebar({
                 );
               })
             )}
+          </Sidebar.SectionItems>
+        </Sidebar.Section>
+
+        {/*
+         * The pipeline. Without this the Studio carried only Home / All
+         * Generations / Projects while every other screen carried the full
+         * CineStory navigation, so the two halves of the product read as two
+         * different apps and the Studio looked like a tool someone left behind.
+         * Same list, same order, same icons as AppShell — one source of truth.
+         */}
+        <Sidebar.Section>
+          <Sidebar.SectionHeader>
+            <Sidebar.SectionTitle>CineStory</Sidebar.SectionTitle>
+          </Sidebar.SectionHeader>
+          <Sidebar.SectionItems>
+            {NAV_ITEMS.map((item) => (
+              <Sidebar.Item
+                key={item.path}
+                onClick={() => { window.location.href = item.path; }}
+                start={<IconTile as={item.icon} gradient="brand" />}
+                title={item.label}
+              />
+            ))}
+          </Sidebar.SectionItems>
+        </Sidebar.Section>
+
+        <Sidebar.Section>
+          <Sidebar.SectionHeader>
+            <Sidebar.SectionTitle>Account</Sidebar.SectionTitle>
+          </Sidebar.SectionHeader>
+          <Sidebar.SectionItems>
+            {ACCOUNT_ITEMS.map((item) => (
+              <Sidebar.Item
+                key={item.path}
+                onClick={() => { window.location.href = item.path; }}
+                start={<IconTile as={item.icon} gradient="neutral" />}
+                title={item.label}
+              />
+            ))}
           </Sidebar.SectionItems>
         </Sidebar.Section>
       </Sidebar.Body>

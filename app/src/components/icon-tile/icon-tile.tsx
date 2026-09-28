@@ -29,7 +29,8 @@ import { cn as cx } from "@/lib/utils";
  */
 
 export type IconTileGradient =
-  "blue" | "teal" | "purple" | "pink" | "orange" | "green" | "red" | "indigo";
+  | "brand" | "ember"
+  | "blue" | "teal" | "purple" | "pink" | "orange" | "green" | "red" | "indigo";
 
 /**
  * Brand gradient presets for the colored tile. The stops are bespoke branded
@@ -38,6 +39,10 @@ export type IconTileGradient =
  * light-to-deep sweep so a row of mixed tiles reads as one family.
  */
 export const ICON_TILE_GRADIENT: Record<IconTileGradient, string> = {
+  // CineStory's own two. Prefer these in app surfaces: the eight below are the
+  // scaffold's generic palette and read as a different product's chrome.
+  brand: "linear-gradient(135deg, var(--peyris-violet-hover) 0%, var(--peyris-violet-press) 100%)",
+  ember: "linear-gradient(135deg, var(--peyris-burgundy-hover) 0%, var(--peyris-burgundy) 100%)",
   blue: "linear-gradient(135deg, rgb(65, 136, 190) 0%, rgb(14, 39, 114) 100%)",
   teal: "linear-gradient(135deg, rgb(81, 226, 224) 3.8675%, rgb(18, 92, 141) 93.451%)",
   purple: "linear-gradient(135deg, rgb(158, 120, 226) 0%, rgb(63, 26, 130) 100%)",

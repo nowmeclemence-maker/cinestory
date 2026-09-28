@@ -60,7 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Sidebar.Item
                 selected={currentPath === "/studio"}
                 onClick={() => handleNav("/studio")}
-                start={<IconTile as={ClapperboardIcon} gradient="blue" />}
+                start={<IconTile as={ClapperboardIcon} gradient="brand" />}
                 title="Studio"
               />
               {NAV_ITEMS.map((item) => (
@@ -68,7 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={item.path}
                   selected={currentPath.startsWith(item.path)}
                   onClick={() => handleNav(item.path)}
-                  start={<IconTile as={item.icon} gradient="teal" />}
+                  start={<IconTile as={item.icon} gradient="brand" />}
                   title={item.label}
                 />
               ))}
