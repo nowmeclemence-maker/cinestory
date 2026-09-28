@@ -9,6 +9,12 @@ import { d1ClaimStore, inMemoryClaimStore, withClaim } from "./story-claims";
 import { completeJsonWithRetry, extractJson, extractJsonArray, hasItems } from "./llm-json";
 import { expandWardrobeBackReferences, wardrobePromptLine } from "./wardrobe";
 import {
+  MAX_CONSECUTIVE_SAME_LOCATION,
+  locationVarietyOk,
+  requiredLocationCount,
+  stripContinuityLeakage,
+} from "./story-writing";
+import {
   DEFAULT_DURATION_SECONDS,
   estimateFilmCost,
   getLocation,
@@ -293,8 +299,10 @@ async function generateScript(input: {
     `Story template: ${input.templateTitle}. Creative direction: ${input.templateDirective}`,
     `Setting: ${input.locationDescription}.`,
     `Write EXACTLY ${input.sceneCount} scenes, each a distinct visual beat that reads as a continuous story arc: hook, build, turn, payoff/CTA.`,
-    "Every scene must feature the SAME main subject (the user's own photo will be used as their likeness) for full visual continuity — describe wardrobe, expression and pose so they stay consistent scene to scene.",
-    "Restate the wardrobe EXPLICITLY in every scene (garment, colour, footwear, accessories). Never write \"the same outfit\", \"same clothes\" or any other back-reference: each scene is generated on its own, so a back-reference produces a different outfit.",
+    "Write each scene description as PURE CINEMA: what happens and what we see — action, place, light, props, expression, movement. It is shown to the user and is theirs to edit, so it must read as writing, never as production notes.",
+    "NEVER mention the subject's identity, a photo, likeness or wardrobe continuity. Do not write \"the same subject\", \"the main subject\", \"matching the user's photo\", \"outfit unchanged\", \"identical wardrobe\" or \"same outfit\", and never use the words \"same\", \"unchanged\" or \"identical\" about the person or their clothes — identity and wardrobe are attached separately by the studio from the character record.",
+    "Give EVERY scene a distinct beat and a change of state: by the end of the scene something is different than at its start (a decision, a discovery, a move, a shift in mood or power). A scene that merely continues the last one is not a new beat — sitting down and then staying seated is one beat, not two.",
+    "Vary the setting and the shot scale across the film: travel to different places, and alternate wide establishing shots with close, intimate ones. Do not stage the whole film in one room, and do not repeat a room for more than two scenes in a row unless the story genuinely demands it.",
     "Dialogue/narration lines must be short (under 18 words) — they will be spoken on camera or read as voiceover.",
     "Respond with ONLY strict JSON, no markdown fences, matching exactly this shape:",
     '{"title": string, "hook": string, "cta": string, "musicMood": string, "colorGrade": string, "scenes": [{"description": string, "camera": string, "dialogue": string, "onScreenText": string}]}',
@@ -326,7 +334,8 @@ async function generateScript(input: {
     musicMood: String(parsed.musicMood ?? "cinematic, emotional"),
     colorGrade: String(parsed.colorGrade ?? "warm cinematic"),
     scenes: parsed.scenes.slice(0, input.sceneCount).map((scene) => ({
-      description: String(scene.description ?? ""),
+      // Net for prompt drift: the user must never read or edit studio plumbing.
+      description: stripContinuityLeakage(String(scene.description ?? "")),
       camera: String(scene.camera ?? "slow push in"),
       dialogue: String(scene.dialogue ?? ""),
       onScreenText: String(scene.onScreenText ?? ""),
@@ -1085,7 +1094,7 @@ export async function proposeCharacters(storyId: string): Promise<CastMemberDTO[
     "The FIRST character is the protagonist (the person the story follows); if the story is first-person (myself/me), name them after the story's subject.",
     "Respond with ONLY strict JSON, no markdown fences:",
     '[{"name": string, "role": string, "biography": string, "appearance": string, "personality": string, "clothing": string}]',
-    "appearance: concrete physical description (age, build, hair, skin, face). clothing: what they wear. biography: one short paragraph.",
+    "appearance: concrete physical description (age, build, hair, skin, face). clothing: the exact outfit worn throughout the film (garments, colours, footwear, accessories) — this single record is what the studio injects into every scene, so state it once, precisely. biography: one short paragraph.",
   ].join("\n");
 
   const messages = [
@@ -1313,6 +1322,10 @@ export async function proposeLocations(storyId: string): Promise<StoryDTO> {
   const system = [
     "You are the set designer for CineStory, an AI cinematic short-video studio.",
     "For EVERY scene of the script choose one set/location: either one of the presets below (use its exact title) or a fitting free description.",
+    "A film must MOVE: choose DISTINCT locations that serve the story arc — different places, not the same room described differently.",
+    `Never use the same location for more than ${MAX_CONSECUTIVE_SAME_LOCATION} consecutive scenes unless the script explicitly requires staying put for a dramatic reason.`,
+    `Across ${scenes.length} scenes use at least ${requiredLocationCount(scenes.length)} different locations. If the story is indoors, vary the room AND the part of it (entrance, hallway, kitchen, balcony, bathroom) and the time of day, so consecutive scenes do not look alike.`,
+    "Vary interior and exterior, and day and night, across the film.",
     `Preset locations:\n${presets}`,
     "Respond with ONLY strict JSON, no markdown fences, one object per scene in script order:",
     '[{"name": string, "description": string}]',
@@ -1334,9 +1347,33 @@ export async function proposeLocations(storyId: string): Promise<StoryDTO> {
       return hasItems(parsed) ? parsed : null;
     },
   );
-  const proposals = (items ?? []) as Array<Record<string, unknown>>;
+  let proposals = (items ?? []) as Array<Record<string, unknown>>;
   if (proposals.length === 0) {
     throw new ApiJobError("locations_invalid", "The set designer returned no locations.", { status: 502 });
+  }
+
+  // A film that never moves is the failure being fixed here, so it is worth one
+  // stricter attempt rather than silently accepting five shots of one room.
+  const proposedNames = proposals.map((prop) => String(prop?.name ?? ""));
+  if (!locationVarietyOk(proposedNames, scenes.length)) {
+    const stricter = String(
+      (
+        await llm.complete({
+          model,
+          messages: [
+            ...messages,
+            {
+              role: "user" as const,
+              content: `That plan barely moves. Redo it with at least ${requiredLocationCount(
+                scenes.length,
+              )} DIFFERENT locations across ${scenes.length} scenes, and never the same location more than ${MAX_CONSECUTIVE_SAME_LOCATION} scenes in a row.`,
+            },
+          ],
+        })
+      ).content ?? "",
+    );
+    const retried = extractJsonArray(stricter);
+    if (hasItems(retried)) proposals = retried as Array<Record<string, unknown>>;
   }
 
   for (let i = 0; i < scenes.length; i++) {
