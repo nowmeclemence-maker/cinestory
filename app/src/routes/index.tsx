@@ -218,23 +218,22 @@ function Navbar() {
 
 // ─── Hero ───────────────────────────────────────────────────────────────────
 
-const HERO_LINES = [
-  "a vertical drama",
-  "a product commercial",
-  "a fashion film",
-  "a chapter of your book",
-  "a brand story",
-  "a short film",
+/**
+ * Kinds of film people actually make here. Shown as a static line under the
+ * headline rather than cycled through it: a rotating headline gambles on
+ * whichever niche happens to be on screen when someone arrives, and "a fashion
+ * film" reads as the whole product rather than one example of it.
+ */
+const FILM_KINDS = [
+  "Short films",
+  "Vertical drama",
+  "Product commercials",
+  "Book adaptations",
+  "Brand stories",
 ];
 
 function Hero() {
-  const [textIdx, setTextIdx] = useState(0);
   const { href, primaryLabel } = useDestination();
-
-  useEffect(() => {
-    const timer = setInterval(() => setTextIdx((i) => (i + 1) % HERO_LINES.length), 2600);
-    return () => clearInterval(timer);
-  }, []);
 
   return (
     <section className="relative min-h-[90vh] overflow-hidden bg-cine-surface">
@@ -253,17 +252,9 @@ function Hero() {
 
         <FadeIn delay={150}>
           <h1 className="max-w-4xl text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl md:text-6xl lg:text-7xl">
-            Direct
-            <br />
-            <span className="relative">
-              <span className="invisible">{HERO_LINES[textIdx]}</span>
-              <span
-                key={textIdx}
-                className="absolute inset-0 bg-gradient-to-r from-cine-accent via-cine-accent-hover to-cine-ember bg-clip-text text-transparent"
-                style={{ animation: "fadeIn 0.5s ease-out" }}
-              >
-                {HERO_LINES[textIdx]}
-              </span>
+            Turn your idea into a{" "}
+            <span className="bg-gradient-to-r from-cine-accent via-cine-accent-hover to-cine-ember bg-clip-text text-transparent">
+              finished film
             </span>
           </h1>
         </FadeIn>
@@ -275,7 +266,18 @@ function Hero() {
           </p>
         </FadeIn>
 
-        <FadeIn delay={450}>
+        <FadeIn delay={400}>
+          <ul className="mt-8 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-sm text-white/45">
+            {FILM_KINDS.map((kind, i) => (
+              <li key={kind} className="flex items-center gap-3">
+                {i > 0 && <span aria-hidden="true" className="text-white/20">·</span>}
+                {kind}
+              </li>
+            ))}
+          </ul>
+        </FadeIn>
+
+        <FadeIn delay={500}>
           <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row">
             <a href={href}>
               <Button variant="marketingPrimary" size="lg" className="group text-base">
