@@ -197,9 +197,9 @@ function EpisodePipeline({ step, storyStatus }: { step: string | null; storyStat
               <span
                 className={`h-1.5 w-full rounded-full transition-colors ${
                   isFailed && idx === Math.max(0, effectiveIdx)
-                    ? "bg-red-500"
+                    ? "bg-cine-danger"
                     : done || (isReady && idx === EPISODE_PIPELINE.length - 1)
-                      ? "bg-emerald-500"
+                      ? "bg-cine-success"
                       : current
                         ? "bg-q-brand-primary"
                         : "bg-q-transparent-light-10"
@@ -218,11 +218,11 @@ function EpisodePipeline({ step, storyStatus }: { step: string | null; storyStat
       </div>
       <div className="mt-2">
         {isReady ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-500">
+          <span className="inline-flex items-center gap-1 rounded-full bg-cine-success-soft px-2.5 py-0.5 text-[11px] font-medium text-cine-success">
             <Check className="size-3" /> Ready to publish
           </span>
         ) : isFailed ? (
-          <span className="inline-flex items-center rounded-full bg-red-500/10 px-2.5 py-0.5 text-[11px] font-medium text-red-500">
+          <span className="inline-flex items-center rounded-full bg-cine-danger-soft px-2.5 py-0.5 text-[11px] font-medium text-cine-danger">
             Failed — open to see the cause
           </span>
         ) : step ? (

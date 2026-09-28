@@ -45,9 +45,9 @@ export function StepBar({
             <span
               className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
                 isDone
-                  ? "bg-emerald-500 text-white"
+                  ? "bg-cine-success text-white"
                   : isCurrent
-                    ? "bg-q-brand-primary text-black"
+                    ? "bg-q-brand-primary text-white"
                     : "bg-q-transparent-light-10 text-q-text-tertiary"
               }`}
             >

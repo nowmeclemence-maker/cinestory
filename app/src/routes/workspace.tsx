@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useFnfMediaClient } from "@higgsfield/fnf-react";
 import { Typography } from "@higgsfield/quanta/typography";
 import { Button } from "@higgsfield/quanta/button";
 import { Icon } from "@higgsfield/quanta/icon";
@@ -15,10 +16,14 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/layouts/app-shell";
 import { StepBar } from "@/components/story/step-bar";
+import { AssetLibraryModal, type AssetLibraryItem } from "@/components/asset-library";
+import { UploadField } from "@/components/upload-field";
+import { mediaRefToAssetItem } from "@/lib/higgsfield-generation-results";
 import {
   getStoryFn, updateScriptFn, regenerateScriptFn, validateScriptFn, validateStoryboardFn,
   regenerateSceneImageFn, listStoryCharactersFn, proposeCharactersFn, linkCharacterFn,
   unlinkCharacterFn, generateCharacterPortraitFn, validateCharactersFn, addCharacterImageFn,
+  applySelfieReferenceFn,
   listLibraryCharactersFn, proposeLocationsFn, setSceneLocationFn, generateSceneLocationFn,
   validateLocationsFn, setSceneDialogueFn, setStoryMusicFn, setStoryVoiceoverFn, validateAudioFn,
   listMusicTracksFn, createMusicTrackFn, remasterStoryFn,
@@ -318,17 +323,38 @@ function WorkspacePage() {
     }
   };
 
-  const handleUploadPhoto = async (characterId: string, file: File) => {
+  // A reference photo arrives ALREADY uploaded by AssetLibraryModal (either a
+  // fresh upload or a library pick), so the handler takes the ready { ref, src }
+  // — never raw bytes. `ref` is what generation consumes; `src` is for display.
+  const handleAddReference = async (characterId: string, item: { ref?: unknown; src: string }) => {
+    if (!story) return;
+    // Preview-only library items carry no submit-ready ref — never store one.
+    if (!item.ref) {
+      toast.error("That item has no usable reference — pick another photo or upload one.");
+      return;
+    }
+    setCastBusy(characterId);
+    setStageError(null);
+    try {
+      await addCharacterImageFn({ data: { characterId, ref: item.ref, src: item.src } });
+      await refreshCast();
+      toast.success("Photo added — the character will be consistent from this face");
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setCastBusy(null);
+    }
+  };
+
+  // Fix 3: fill a character's reference from the story's own photo, in one click.
+  const handleUseSelfie = async (characterId: string) => {
     if (!story) return;
     setCastBusy(characterId);
     setStageError(null);
     try {
-      const uploaded = await uploadAsset(file);
-      await addCharacterImageFn({
-        data: { characterId, ref: uploaded.ref, src: uploaded.src },
-      });
+      await applySelfieReferenceFn({ data: { storyId: story.id, characterId } });
       await refreshCast();
-      toast.success("Photo added — the character will be consistent from this face");
+      toast.success("Using your photo for this character");
     } catch (error) {
       getStageError(error);
     } finally {
@@ -626,7 +652,8 @@ function WorkspacePage() {
                 onLink={(characterId) => void handleLinkCharacter(characterId)}
                 onUnlink={(characterId) => void handleUnlinkCharacter(characterId)}
                 onPortrait={(characterId) => void handleGeneratePortrait(characterId)}
-                onUploadPhoto={(characterId, file) => void handleUploadPhoto(characterId, file)}
+                onAddReference={(characterId, item) => void handleAddReference(characterId, item)}
+                onUseSelfie={(characterId) => void handleUseSelfie(characterId)}
                 onValidate={() => void handleValidateCharacters()}
               />
             ) : story.status === "locations" ? (
@@ -676,7 +703,7 @@ function WorkspacePage() {
             ) : story.status === "ready" && story.finalVideoUrl ? (
               <ReadyView story={story} />
             ) : story.status === "failed" ? (
-              <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-6">
+              <div className="rounded-lg border border-cine-danger/30 bg-cine-danger-soft p-6">
                 <Typography as="h3" variant="title-sm-semi-bold" color="danger">
                   This story stopped
                 </Typography>
@@ -689,7 +716,7 @@ function WorkspacePage() {
                       What happened, scene by scene:
                     </Typography>
                     {story.scenes.filter((scene) => scene.error).map((scene) => (
-                      <div key={scene.id} className="rounded-lg border border-red-500/20 bg-q-background-primary px-3 py-2 text-sm">
+                      <div key={scene.id} className="rounded-lg border border-cine-danger/20 bg-q-background-primary px-3 py-2 text-sm">
                         <span className="font-medium text-q-text-primary">Scene {scene.idx + 1}: </span>
                         <span className="text-q-text-secondary">{scene.error}</span>
                       </div>
@@ -861,7 +888,7 @@ function AudioView({
           Scenes already carry native dialogue and sound. Mute a scene's dialogue (captions hide too), pick a music bed, add an optional voiceover — then validate the mix to cut the film.
         </Typography>
         {error && (
-          <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm text-red-500" role="alert">
+          <div className="mt-3 rounded-lg border border-cine-danger/30 bg-cine-danger-soft px-3 py-2 text-sm text-cine-danger" role="alert">
             {error}
           </div>
         )}
@@ -937,7 +964,7 @@ function AudioView({
           </label>
           {story.voiceoverUrl && (
             <>
-              <span className="text-xs text-emerald-500">Voiceover ready</span>
+              <span className="text-xs text-cine-success">Voiceover ready</span>
               <button type="button" className="text-xs text-q-text-danger hover:underline" onClick={() => onSetVoiceover(null)}>Remove</button>
             </>
           )}
@@ -1013,7 +1040,7 @@ function LocationsView({
           </div>
         </div>
         {error && (
-          <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm text-red-500" role="alert">
+          <div className="mt-3 rounded-lg border border-cine-danger/30 bg-cine-danger-soft px-3 py-2 text-sm text-cine-danger" role="alert">
             {error}
           </div>
         )}
@@ -1043,7 +1070,7 @@ function LocationsView({
                 <div className="flex items-center gap-2">
                   <Typography as="h3" variant="label-md-medium" color="primary">Scene {scene.idx + 1}</Typography>
                   <span className={`rounded-full px-2 py-0.5 text-[11px] ${
-                    hasDescription ? "bg-emerald-500/10 text-emerald-500" : "bg-q-transparent-light-10 text-q-text-tertiary"
+                    hasDescription ? "bg-cine-success-soft text-cine-success" : "bg-q-transparent-light-10 text-q-text-tertiary"
                   }`}>
                     {hasDescription ? "Set set" : "No set"}
                   </span>
@@ -1154,7 +1181,7 @@ type LibraryCharacter = { id: string; name: string; role: string; appearance: st
 
 function CastingView({
   story, cast, availableCharacters, busy, validating, error,
-  onPropose, onLink, onUnlink, onPortrait, onUploadPhoto, onValidate,
+  onPropose, onLink, onUnlink, onPortrait, onAddReference, onUseSelfie, onValidate,
 }: {
   story: StoryDTO;
   cast: CastMemberDTO[];
@@ -1166,12 +1193,30 @@ function CastingView({
   onLink: (characterId: string) => void;
   onUnlink: (characterId: string) => void;
   onPortrait: (characterId: string) => void;
-  onUploadPhoto: (characterId: string, file: File) => void;
+  onAddReference: (characterId: string, item: { ref?: unknown; src: string }) => void;
+  onUseSelfie: (characterId: string) => void;
   onValidate: () => void;
 }) {
   const imageCost = story.sceneCount * 1.5;
   const allHavePhotos = cast.length > 0 && cast.every((m) => m.hasReference || m.portraitJobId);
-  const canValidate = cast.length === 0 || allHavePhotos;
+  const missingPhotos = cast.filter((m) => !m.hasReference && !m.portraitJobId).length;
+
+  // The picker's library source: the user's own uploaded and generated stills,
+  // read through the same FNF media client the Studio uses. New uploads are
+  // handled by the modal's `onUpload` (uploadAsset), which returns a
+  // submit-ready selection.
+  const mediaClient = useFnfMediaClient();
+  const { data: libraryItems = [] } = useQuery({
+    queryKey: ["cast", "library", "images"],
+    queryFn: async () => {
+      const page = await mediaClient.list({ type: "image", size: 40 });
+      return page.items
+        .map(mediaRefToAssetItem)
+        .filter((item): item is AssetLibraryItem => item != null);
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
 
   return (
     <div className="space-y-4">
@@ -1180,12 +1225,12 @@ function CastingView({
           <div>
             <Typography as="h2" variant="title-sm-semi-bold" color="primary">Cast</Typography>
             <Typography as="p" variant="caption-sm-regular" color="secondary" className="mt-1">
-              Up to 3 characters · storyboard images cost ~{Math.round(imageCost)} credits · every cast member appears in every scene (per-scene casting arrives with Lot D).
+              Optional — the AI proposes the cast automatically. Add a reference photo so a face stays consistent; skip it and your own photo carries the story. Up to 3 characters · storyboard images cost ~{Math.round(imageCost)} credits.
             </Typography>
           </div>
         </div>
         {error && (
-          <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm text-red-500" role="alert">
+          <div className="mt-3 rounded-lg border border-cine-danger/30 bg-cine-danger-soft px-3 py-2 text-sm text-cine-danger" role="alert">
             {error}
           </div>
         )}
@@ -1213,21 +1258,22 @@ function CastingView({
               ))}
             </select>
           )}
-          {cast.length > 0 && (
-            <Button
-              variant="marketingPrimary"
-              size="md"
-              disabled={validating || !canValidate}
-              onClick={onValidate}
-            >
-              {validating ? <Loader size="xs" color="neutral" /> : <Icon as={Film} size="sm" />}
-              {cast.length === 0
-                ? `Validate cast & build storyboard (~${Math.round(imageCost)} credits)`
-                : allHavePhotos
-                  ? `Validate cast & build storyboard (~${Math.round(imageCost)} credits)`
-                  : "Waiting for all cast photos…"}
-            </Button>
-          )}
+          {/* Always available: casting is optional, never a wall. */}
+          <Button
+            variant="marketingPrimary"
+            size="md"
+            disabled={validating}
+            onClick={onValidate}
+          >
+            {validating ? <Loader size="xs" color="neutral" /> : <Icon as={Film} size="sm" />}
+            {cast.length === 0
+              ? "Skip casting & continue"
+              : allHavePhotos
+                ? "Continue to sets"
+                : missingPhotos === cast.length
+                  ? "Continue to sets (your photo will be used)"
+                  : `Continue to sets (${missingPhotos} without a photo)`}
+          </Button>
         </div>
       </div>
 
@@ -1252,9 +1298,23 @@ function CastingView({
                     <span className="text-xs text-q-text-secondary">Generating portrait…</span>
                   </div>
                 ) : (
-                  <div className="flex aspect-[3/4] w-full items-center justify-center bg-q-background-secondary">
-                    <UserRound className="size-8 text-q-text-tertiary" />
-                  </div>
+                  // Fix 2 — the empty slot IS the picker: AssetLibraryModal owns
+                  // upload + library browsing, and reports a submit-ready ref.
+                  <AssetLibraryModal
+                    accept="image/*"
+                    items={libraryItems}
+                    onUpload={uploadAsset}
+                    pagination={{}}
+                    onSelect={(item) => onAddReference(member.characterId, { ref: item.ref, src: item.src })}
+                    trigger={
+                      <UploadField
+                        render={<button type="button" />}
+                        icon={ImagePlus}
+                        title="Add photo"
+                        subtitle="Upload or pick from your library"
+                      />
+                    }
+                  />
                 )}
                 <div className="space-y-2 p-3">
                   <div className="flex items-start justify-between gap-2">
@@ -1283,39 +1343,53 @@ function CastingView({
                       {[member.appearance, member.clothing ? `wears ${member.clothing}` : ""].filter(Boolean).join(" · ")}
                     </Typography>
                   )}
-                  <div className="flex items-center gap-2 pt-1">
-                    {!member.hasReference && !member.portraitJobId && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {member.portraitJobId ? (
+                      <span className="text-xs text-q-text-tertiary">Portrait queued…</span>
+                    ) : member.hasReference ? (
                       <>
-                        <label className="cursor-pointer rounded-lg border border-q-border-subtle px-2.5 py-1.5 text-xs font-medium text-q-text-secondary hover:bg-q-transparent-light-10">
-                          <span className="flex items-center gap-1">
-                            {isBusy ? <Loader size="xs" color="neutral" /> : <Icon as={ImagePlus} size="sm" />}
-                            Add photo
-                          </span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            disabled={isBusy || validating}
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) onUploadPhoto(member.characterId, file);
-                              e.target.value = "";
-                            }}
-                          />
-                        </label>
-                        <Button variant="tertiary" size="sm" disabled={isBusy || validating} onClick={() => onPortrait(member.characterId)}>
+                        <span className="rounded-full bg-cine-success-soft px-2.5 py-1 text-xs text-cine-success">
+                          Reference ready
+                        </span>
+                        <AssetLibraryModal
+                          accept="image/*"
+                          items={libraryItems}
+                          onUpload={uploadAsset}
+                          pagination={{}}
+                          onSelect={(item) => onAddReference(member.characterId, { ref: item.ref, src: item.src })}
+                          trigger={
+                            <button
+                              type="button"
+                              disabled={isBusy || validating}
+                              className="rounded-lg border border-q-border-subtle px-2.5 py-1.5 text-xs font-medium text-q-text-secondary hover:bg-q-transparent-light-10 disabled:opacity-50"
+                            >
+                              Replace photo
+                            </button>
+                          }
+                        />
+                      </>
+                    ) : (
+                      <>
+                        {/* Fix 3 — inherit the story's own photo in one click. */}
+                        <Button
+                          variant="tertiary"
+                          size="sm"
+                          disabled={isBusy || validating}
+                          onClick={() => onUseSelfie(member.characterId)}
+                        >
+                          {isBusy ? <Loader size="xs" color="neutral" /> : <Icon as={UserRound} size="sm" />}
+                          Use my photo
+                        </Button>
+                        <Button
+                          variant="tertiary"
+                          size="sm"
+                          disabled={isBusy || validating}
+                          onClick={() => onPortrait(member.characterId)}
+                        >
                           {isBusy ? <Loader size="xs" color="neutral" /> : <Icon as={Wand2} size="sm" />}
                           Generate portrait (1.5)
                         </Button>
                       </>
-                    )}
-                    {member.portraitJobId && (
-                      <span className="text-xs text-q-text-tertiary">Portrait queued…</span>
-                    )}
-                    {member.hasReference && !member.portraitJobId && (
-                      <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-500">
-                        Reference ready
-                      </span>
                     )}
                   </div>
                 </div>
@@ -1366,7 +1440,7 @@ function StoryboardView({
           )}
         </div>
         {error && (
-          <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm text-red-500" role="alert">
+          <div className="mt-3 rounded-lg border border-cine-danger/30 bg-cine-danger-soft px-3 py-2 text-sm text-cine-danger" role="alert">
             {error}
           </div>
         )}
@@ -1406,8 +1480,8 @@ function StoryboardView({
                 <span className="text-xs font-medium text-q-text-primary">Scene {scene.idx + 1}</span>
                 <div className="flex items-center gap-1.5">
                   <span className={`rounded-full px-2 py-0.5 text-[11px] ${
-                    scene.status === "image_ready" ? "bg-emerald-500/10 text-emerald-500" :
-                    scene.status === "failed" ? "bg-red-500/10 text-red-500" :
+                    scene.status === "image_ready" ? "bg-cine-success-soft text-cine-success" :
+                    scene.status === "failed" ? "bg-cine-danger-soft text-cine-danger" :
                     "bg-q-transparent-light-10 text-q-text-secondary"
                   }`}>
                     {scene.status === "image_ready" ? "Ready" : scene.status === "failed" ? "Failed" : "Generating"}
@@ -1483,8 +1557,8 @@ function SceneCard({ scene, idx }: { scene: SceneDTO; idx: number }) {
       <div className="flex items-center justify-between p-2.5">
         <span className="text-xs font-medium text-q-text-primary">Scene {idx + 1}</span>
         <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${
-          scene.status === "ready" ? "bg-emerald-500/10 text-emerald-500" :
-          scene.status === "failed" ? "bg-red-500/10 text-red-500" :
+          scene.status === "ready" ? "bg-cine-success-soft text-cine-success" :
+          scene.status === "failed" ? "bg-cine-danger-soft text-cine-danger" :
           "bg-q-transparent-light-10 text-q-text-secondary"
         }`}>
           {scene.status === "ready" ? "Done" : scene.status === "failed" ? scene.error ?? "Failed" : scene.status}

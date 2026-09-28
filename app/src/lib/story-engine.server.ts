@@ -728,6 +728,18 @@ export async function validateScript(storyId: string): Promise<StoryDTO> {
     current_step: "characters",
     progress_label: "Cast your story…",
   });
+
+  // Landing on an empty Characters screen was a dead end: the casting director
+  // runs automatically on entry so the user arrives to a pre-filled cast. It is
+  // best-effort by design — if the proposal fails, the step still offers the
+  // manual paths (library, photo, portrait, skip), so nothing is blocked.
+  try {
+    await proposeCharacters(storyId);
+  } catch {
+    await updateStory(db, storyId, {
+      progress_label: "Cast your story — propose with AI, add a photo, or skip.",
+    });
+  }
   return getStory(storyId);
 }
 
@@ -1124,26 +1136,69 @@ async function pollCharacterPortraits(db: D1Database | null, storyId: string): P
 }
 
 /**
- * Lot C — the paid gate into the storyboard: every cast member needs a
- * reference photo or generated portrait, then the balance is checked BEFORE
- * the per-scene images start (nothing spent if short).
+ * Append one reference photo to a library character (owner-scoped).
+ * Shared by the selfie fallback and the explicit "use my photo" action.
+ */
+async function appendCharacterReference(characterId: string, image: { ref: unknown; src: string }): Promise<void> {
+  const { getCharacter, updateCharacter } = await import("./services/characters");
+  const character = await getCharacter(characterId);
+  const images = [...character.referenceImages, { ref: image.ref, src: image.src }] as typeof character.referenceImages;
+  await updateCharacter(characterId, { referenceImages: images });
+}
+
+/**
+ * Fix 3 — one click fills a cast member's reference from the story's own photo.
+ * Free: it reuses the selfie already uploaded with the story, no new media.
+ */
+export async function applySelfieReference(storyId: string, characterId: string): Promise<CastMemberDTO[]> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "characters") {
+    throw new ApiJobError("casting_locked", "The cast can only be edited at the Characters step.", { status: 409 });
+  }
+  const selfie: StoredRef | null = story.selfie_ref ? (JSON.parse(story.selfie_ref) as StoredRef) : null;
+  if (!selfie?.ref) {
+    throw new ApiJobError(
+      "no_story_photo",
+      "This story has no photo of you yet. Add a photo, pick one from the library, or generate a portrait.",
+      { status: 409 },
+    );
+  }
+  const cast = await loadCast(db, storyId);
+  const member = cast.find((c) => c.characterId === characterId);
+  if (!member) throw new ApiJobError("not_in_cast", "This character is not in the story's cast.", { status: 404 });
+
+  await appendCharacterReference(characterId, { ref: selfie.ref, src: selfie.src });
+  return listStoryCharacters(storyId);
+}
+
+/**
+ * Lot C — the gate out of casting. VISITING this step is optional: the cast may
+ * be empty, or members may still be without a photo. Rather than blocking the
+ * pipeline (the old behaviour refused to advance), any member still missing a
+ * reference silently inherits the story's own photo, and the story proceeds to
+ * Sets. The storyboard already passes that photo to the image model as the
+ * identity reference, so the film stays centred on the same face either way.
  */
 export async function validateCharacters(storyId: string): Promise<StoryDTO> {
   const { db, story } = await loadOwnedStory(storyId);
   if (story.status !== "characters") return getStory(storyId);
 
   const cast = await loadCast(db, storyId);
-  const missing = cast.filter((c) => c.referenceImages.length === 0 && !c.portraitJobId);
-  if (missing.length > 0) {
-    throw new ApiJobError(
-      "casting_incomplete",
-      `Every cast member needs a reference photo or generated portrait before filming: ${missing.map((m) => m.name).join(", ")}.`,
-      { status: 409 },
-    );
+  const selfie: StoredRef | null = story.selfie_ref ? (JSON.parse(story.selfie_ref) as StoredRef) : null;
+
+  // Selfie fallback: fill anyone still without a reference or a portrait in
+  // flight. Best-effort — a failure here must never stop the storyboard.
+  if (selfie?.ref) {
+    const missing = cast.filter((c) => c.referenceImages.length === 0 && !c.portraitJobId);
+    for (const member of missing) {
+      try {
+        await appendCharacterReference(member.characterId, { ref: selfie.ref, src: selfie.src });
+      } catch {
+        // The scene-level selfie reference keeps identity consistent regardless.
+      }
+    }
   }
 
-  // Lot D: casting validated → the Locations (sets) step. The storyboard
-  // balance check moved to validateLocations, the last gate before images.
   await updateStory(db, storyId, {
     status: "locations",
     current_step: "locations",

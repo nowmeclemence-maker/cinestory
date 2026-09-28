@@ -24,10 +24,10 @@ function StepChip({ story }: { story: StoryDTO }) {
     <span
       className={`pointer-events-none absolute left-2 top-2 z-20 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium backdrop-blur-sm ${
         failed
-          ? "bg-red-500/80 text-white"
+          ? "bg-cine-danger/80 text-white"
           : story.status === "ready"
-            ? "bg-emerald-500/80 text-white"
-            : "bg-q-brand-primary/90 text-black"
+            ? "bg-cine-success/80 text-white"
+            : "bg-q-brand-primary/90 text-white"
       }`}
     >
       {stepLabel(story.currentStep)}

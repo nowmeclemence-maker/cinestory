@@ -19,6 +19,7 @@ import {
   setStoryVoiceover,
   unlinkCharacter,
   updateScript,
+  applySelfieReference,
   validateAudio,
   validateCharacters,
   validateLocations,
@@ -136,6 +137,11 @@ export const generateCharacterPortraitFn = createServerFn({ method: "POST" })
 export const validateCharactersFn = createServerFn({ method: "POST" })
   .validator(z.object({ storyId: z.string().min(1) }))
   .handler(({ data }) => validateCharacters(data.storyId));
+
+/** Fill one cast member's reference photo from the story's own photo (free). */
+export const applySelfieReferenceFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1), characterId: z.string().min(1) }))
+  .handler(({ data }) => applySelfieReference(data.storyId, data.characterId));
 
 /** Edit a character sheet (appearance etc.) from the cast screen (owner-scoped). */
 export const updateCharacterSheetFn = createServerFn({ method: "POST" })

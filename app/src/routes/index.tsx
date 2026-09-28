@@ -38,37 +38,37 @@ const FEATURES = [
     icon: Clapperboard,
     title: "Story Workspace",
     description: "Write, organize, and refine your story with a full scene editor. Script, camera directions, dialogue, narration — all in one place.",
-    gradient: "from-violet-500 to-purple-600",
+    gradient: "from-cine-accent to-cine-accent-press",
   },
   {
     icon: Users,
     title: "Character Library",
     description: "Create reusable characters with biography, appearance, personality, voice, and reference images. Cast them across any story.",
-    gradient: "from-blue-500 to-cyan-500",
+    gradient: "from-cine-accent to-cine-accent-hover",
   },
   {
     icon: MapPin,
     title: "Location Library",
     description: "Save cinematic locations with mood, lighting, weather, and prompt presets. Reuse them across projects.",
-    gradient: "from-emerald-500 to-teal-500",
+    gradient: "from-cine-success to-cine-accent",
   },
   {
     icon: Image,
     title: "AI Assets",
     description: "A unified media library for images, videos, audio, and music. Folders, search, tags — everything organized.",
-    gradient: "from-orange-500 to-amber-500",
+    gradient: "from-cine-warning to-cine-danger",
   },
   {
     icon: Film,
     title: "Cinematic Generation",
     description: "Turn your story into a polished video automatically. Higgsfield Seedance renders each scene with character consistency.",
-    gradient: "from-rose-500 to-pink-500",
+    gradient: "from-cine-danger to-cine-accent",
   },
   {
     icon: DownloadCloud,
     title: "Multi-Format Export",
     description: "Export to MP4, TikTok, Instagram Reels, YouTube Shorts, 4K, and more. Optimized for every platform.",
-    gradient: "from-indigo-500 to-violet-500",
+    gradient: "from-cine-accent-press to-cine-accent",
   },
 ];
 
@@ -215,8 +215,8 @@ function Hero() {
       {/* Background effects */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-1/2 top-1/4 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-q-brand-primary/20 blur-[120px]" />
-        <div className="absolute right-1/4 top-1/3 h-[400px] w-[400px] rounded-full bg-violet-500/10 blur-[100px]" />
-        <div className="absolute bottom-1/4 left-1/4 h-[300px] w-[300px] rounded-full bg-blue-500/10 blur-[80px]" />
+        <div className="absolute right-1/4 top-1/3 h-[400px] w-[400px] rounded-full bg-cine-accent/10 blur-[100px]" />
+        <div className="absolute bottom-1/4 left-1/4 h-[300px] w-[300px] rounded-full bg-cine-accent/10 blur-[80px]" />
       </div>
 
       <div className="relative mx-auto flex min-h-[90vh] max-w-7xl flex-col items-center justify-center px-4 pt-24 text-center sm:px-6 lg:px-8">
@@ -235,7 +235,7 @@ function Hero() {
               <span className="invisible">{lines[textIdx]}</span>
               <span
                 key={textIdx}
-                className="absolute inset-0 bg-gradient-to-r from-q-brand-primary via-purple-400 to-q-brand-primary bg-clip-text text-transparent transition-all duration-500"
+                className="absolute inset-0 bg-gradient-to-r from-q-brand-primary via-cine-accent-hover to-q-brand-primary bg-clip-text text-transparent transition-all duration-500"
                 style={{ animation: "fadeIn 0.5s ease-out" }}
               >
                 {lines[textIdx]}
@@ -384,7 +384,7 @@ function Testimonials() {
                 <Quote className="mb-4 size-8 text-q-brand-primary/30" />
                 <p className="text-sm leading-relaxed text-gray-300">&ldquo;{t.text}&rdquo;</p>
                 <div className="mt-6 flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-q-brand-primary to-purple-600 text-xs font-bold text-white">
+                  <div className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-cine-accent to-cine-accent-press text-xs font-bold text-white">
                     {t.author.charAt(0)}
                   </div>
                   <div>
@@ -510,7 +510,7 @@ function CTAFooter() {
     <section className="border-t border-white/5 bg-black py-24">
       <div className="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
         <FadeIn>
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-q-brand-primary/10 via-black to-purple-500/10 p-12">
+          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-q-brand-primary/10 via-black to-cine-accent/10 p-12">
             <div className="pointer-events-none absolute inset-0">
               <div className="absolute left-1/2 top-1/2 h-40 w-40 -translate-x-1/2 -translate-y-1/2 rounded-full bg-q-brand-primary/20 blur-[80px]" />
             </div>

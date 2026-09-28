@@ -21,6 +21,45 @@
 
 @import "tw-animate-css";
 
+/*
+ * ─── CineStory palette (single source of truth) ─────────────────────────────
+ * CineStory is its own studio: it must not wear Higgsfield's lime accent. Every
+ * brand/semantic colour is declared once here as a `--cine-*` token, then the
+ * inherited Quanta accents are remapped onto those tokens so the whole app
+ * (buttons, tabs, badges, progress, icons) picks the palette up automatically.
+ *
+ * To re-skin CineStory, change the six hex values below — nothing else.
+ * The companion `@theme inline` block further down exposes them as Tailwind
+ * utilities (`text-cine-accent`, `bg-cine-success-soft`, `border-cine-danger`…)
+ * so app code never hand-rolls an arbitrary palette colour again.
+ */
+@layer theme {
+  :root,
+  [data-theme="default-dark"] {
+    --cine-accent: #7c5cff;
+    --cine-accent-hover: #9075ff;
+    --cine-accent-press: #6a49f0;
+    --cine-accent-soft: color-mix(in oklab, var(--cine-accent) 15%, transparent);
+    --cine-accent-ring: color-mix(in oklab, var(--cine-accent) 45%, transparent);
+
+    --cine-success: #3dd68c;
+    --cine-success-soft: color-mix(in oklab, var(--cine-success) 13%, transparent);
+    --cine-danger: #ff5c5c;
+    --cine-danger-soft: color-mix(in oklab, var(--cine-danger) 13%, transparent);
+    --cine-warning: #f5a524;
+
+    /* Remap the inherited Higgsfield accents onto CineStory's tokens. */
+    --hf-color-brand-primary: var(--cine-accent);
+    --hf-color-button-brand: var(--cine-accent);
+    --hf-color-button-label-brand: #ffffff;
+    --hf-color-icon-accent: var(--cine-accent);
+    --hf-color-icon-brand: var(--cine-accent);
+    --hf-color-icon-info: var(--cine-accent);
+    --hf-color-state-success-fg: var(--cine-success);
+    --hf-color-state-error-fg: var(--cine-danger);
+  }
+}
+
 @layer components {
   .motion-card {
     transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
@@ -182,6 +221,18 @@
   --color-input: var(--hf-color-border-default);
   --color-ring: var(--hf-color-border-focus);
   --color-ring-offset-background: var(--hf-color-background-primary);
+
+  /* CineStory palette as Tailwind utilities (see the --cine-* tokens above). */
+  --color-cine-accent: var(--cine-accent);
+  --color-cine-accent-hover: var(--cine-accent-hover);
+  --color-cine-accent-press: var(--cine-accent-press);
+  --color-cine-accent-soft: var(--cine-accent-soft);
+  --color-cine-accent-ring: var(--cine-accent-ring);
+  --color-cine-success: var(--cine-success);
+  --color-cine-success-soft: var(--cine-success-soft);
+  --color-cine-danger: var(--cine-danger);
+  --color-cine-danger-soft: var(--cine-danger-soft);
+  --color-cine-warning: var(--cine-warning);
 
   --color-chart-1: var(--hf-color-lime-500);
   --color-chart-2: var(--hf-color-pink-500);
