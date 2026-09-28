@@ -120,6 +120,22 @@ export async function updateCharacter(id: string, data: Partial<Character>): Pro
 }
 
 /**
+ * Append one reference photo to a character and persist it.
+ *
+ * The single write path for EVERY "attach a photo" action — the Character
+ * Library form, the story cast step, and "use my photo" — so the automated
+ * tests that cover this function cover all three surfaces.
+ */
+export async function appendCharacterReference(
+  characterId: string,
+  image: { ref: unknown; src: string },
+): Promise<Character> {
+  const character = await getCharacter(characterId);
+  const images = [...character.referenceImages, image as CharacterImage];
+  return updateCharacter(characterId, { referenceImages: images });
+}
+
+/**
  * The user's own photo, taken from their most recent story (stories.selfie_ref).
  * Lets the Character Library offer "Use my photo" without needing a story context
  * — a library character is not tied to one story.

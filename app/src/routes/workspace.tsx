@@ -19,6 +19,7 @@ import { StepBar } from "@/components/story/step-bar";
 import { AssetLibraryModal, type AssetLibraryItem } from "@/components/asset-library";
 import { UploadField } from "@/components/upload-field";
 import { mediaRefToAssetItem } from "@/lib/higgsfield-generation-results";
+import { attachErrorMessage, isAttachable } from "@/lib/character-references";
 import {
   getStoryFn, updateScriptFn, regenerateScriptFn, validateScriptFn, validateStoryboardFn,
   regenerateSceneImageFn, listStoryCharactersFn, proposeCharactersFn, linkCharacterFn,
@@ -328,9 +329,10 @@ function WorkspacePage() {
   // — never raw bytes. `ref` is what generation consumes; `src` is for display.
   const handleAddReference = async (characterId: string, item: { ref?: unknown; src: string }) => {
     if (!story) return;
-    // Preview-only library items carry no submit-ready ref — never store one.
-    if (!item.ref) {
-      toast.error("That item has no usable reference — pick another photo or upload one.");
+    // Same rule as the Character Library form: a preview-only library item has
+    // no submit-ready ref, so it is refused rather than stored faceless.
+    if (!isAttachable(item)) {
+      toast.error(attachErrorMessage("no_reference"));
       return;
     }
     setCastBusy(characterId);

@@ -1150,10 +1150,10 @@ async function pollCharacterPortraits(db: D1Database | null, storyId: string): P
  * Shared by the selfie fallback and the explicit "use my photo" action.
  */
 async function appendCharacterReference(characterId: string, image: { ref: unknown; src: string }): Promise<void> {
-  const { getCharacter, updateCharacter } = await import("./services/characters");
-  const character = await getCharacter(characterId);
-  const images = [...character.referenceImages, { ref: image.ref, src: image.src }] as typeof character.referenceImages;
-  await updateCharacter(characterId, { referenceImages: images });
+  // Delegates to the single shared write path (services/characters), which the
+  // reference-photo tests drive directly for both surfaces.
+  const characters = await import("./services/characters");
+  await characters.appendCharacterReference(characterId, image);
 }
 
 /**

@@ -15,6 +15,7 @@ import { AppShell } from "@/layouts/app-shell";
 import { AssetLibraryModal, type AssetLibraryItem } from "@/components/asset-library";
 import { UploadField } from "@/components/upload-field";
 import { mediaRefToAssetItem } from "@/lib/higgsfield-generation-results";
+import { attachErrorMessage, attachReference } from "@/lib/character-references";
 import { uploadAsset } from "@/lib/fnf.browser";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -85,12 +86,12 @@ function CharactersPage() {
   // modal's existing Save persists them — cancelling changes nothing.
   const addReference = (selection: { ref?: unknown; src: string }) => {
     if (!editing) return;
-    if (!selection.ref) {
-      toast.error("That item has no usable reference — pick another photo or upload one.");
+    const result = attachReference(editing.referenceImages, selection);
+    if (!result.ok) {
+      toast.error(attachErrorMessage(result.error));
       return;
     }
-    const image = { ref: selection.ref, src: selection.src } as Character["referenceImages"][number];
-    setEditing({ ...editing, referenceImages: [...editing.referenceImages, image] });
+    setEditing({ ...editing, referenceImages: result.images });
     toast.success("Photo added — press Save to keep it");
   };
 
