@@ -32,15 +32,17 @@
  * The companion `@theme inline` block further down exposes them as Tailwind
  * utilities (`text-cine-accent`, `bg-cine-success-soft`, `border-cine-danger`…)
  * so app code never hand-rolls an arbitrary palette colour again.
+ *
+ * These rules are deliberately UNLAYERED. Quanta emits its own theme variables
+ * unlayered, and unlayered CSS beats every @layer regardless of specificity or
+ * source order — so an @layer-wrapped override here loses silently and the app
+ * keeps the inherited lime. (Measured on a real deploy:
+ * --hf-color-brand-primary still resolved to #d1fe17.) Unlayered, plus binding
+ * to the element (html[data-theme=…] = 0-1-1, outranking Quanta's bare
+ * attribute selector at 0-1-0), is what actually wins.
  */
-@layer theme {
-  /* Specificity matters here, not source order: Quanta declares its own
-   * `[data-theme="default-dark"]` block later in the cascade, so an
-   * equal-specificity selector would silently lose to the inherited lime.
-   * Binding to the element (`html[data-theme=…]`, 0-1-1) outranks Quanta's
-   * bare attribute selector (0-1-0) and wins on merit. */
-  :root,
-  html[data-theme="default-dark"] {
+:root,
+html[data-theme="default-dark"] {
     --cine-accent: #7c5cff;
     --cine-accent-hover: #9075ff;
     --cine-accent-press: #6a49f0;
@@ -60,9 +62,8 @@
     --hf-color-icon-accent: var(--cine-accent);
     --hf-color-icon-brand: var(--cine-accent);
     --hf-color-icon-info: var(--cine-accent);
-    --hf-color-state-success-fg: var(--cine-success);
-    --hf-color-state-error-fg: var(--cine-danger);
-  }
+  --hf-color-state-success-fg: var(--cine-success);
+  --hf-color-state-error-fg: var(--cine-danger);
 }
 
 @layer components {
