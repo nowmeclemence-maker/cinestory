@@ -1,7 +1,9 @@
 import { ApiJobError } from "@higgsfield/fnf/errors";
 import { inferContentType } from "@higgsfield/fnf/media";
 import { createFileRoute } from "@tanstack/react-router";
+import { requireCurrentUser } from "@/lib/auth.server";
 import { createServerFnf } from "@/lib/fnf.server";
+import { validateUploadRequestHeaders } from "@/lib/upload-request-security";
 
 const MAX_UPLOAD_BYTES = 60 * 1024 * 1024;
 
@@ -11,6 +13,24 @@ export const Route = createFileRoute("/api/media/upload-audio")({
     handlers: {
       POST: async ({ request }) => {
         try {
+          // Same guard as the image route: prove the origin, then the identity.
+          // A 60 MB unauthenticated endpoint is the cheapest thing in the app
+          // for a stranger to abuse.
+          const rejection = validateUploadRequestHeaders(request, MAX_UPLOAD_BYTES, "Audio files");
+          if (rejection != null) {
+            return Response.json(
+              { ok: false, error: { code: rejection.code, message: rejection.message } },
+              { status: rejection.status },
+            );
+          }
+          const auth = await requireCurrentUser();
+          if (!auth.ok) {
+            return Response.json(
+              { ok: false, error: { code: "auth_required", message: "Sign in to upload audio." } },
+              { status: auth.status },
+            );
+          }
+
           const form = await request.formData();
           const file = form.get("file");
           if (!(file instanceof File)) {

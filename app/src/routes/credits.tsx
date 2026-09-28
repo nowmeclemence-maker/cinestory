@@ -6,7 +6,7 @@ import { Card } from "@higgsfield/quanta/card";
 import { Loader } from "@higgsfield/quanta/loader";
 import { AppShell } from "@/layouts/app-shell";
 import { createServerFn } from "@tanstack/react-start";
-import { CREDIT_PLANS } from "@/lib/services/plans";
+import { VIDEO_ENGINES, clipCredits, imageCredits } from "@/lib/services/pricing";
 
 export const Route = createFileRoute("/credits")({
   component: CreditsPage,
@@ -40,19 +40,27 @@ function CreditsPage() {
                 {balLoading ? "..." : balance ?? 0}
               </Typography>
             </div>
-            <Button variant="marketingPrimary" onClick={() => window.location.href = "/billing"}>Buy Credits</Button>
+            <Button variant="marketingPrimary" onClick={() => { window.location.href = "/pricing"; }}>
+              Get more credits
+            </Button>
           </div>
         </Card>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-          {Object.entries(CREDIT_PLANS).map(([id, plan]) => (
-            <Card key={id} className="p-4 text-center">
-              <Typography as="h3" variant="title-sm-semi-bold" color="primary">{plan.name}</Typography>
-              <Typography as="p" variant="headline-md-bold" color="primary" className="mt-2">${plan.price}</Typography>
-              <Typography as="p" variant="body-sm-regular" color="secondary">{plan.credits.toLocaleString()} credits</Typography>
-              <Button variant="tertiary" size="sm" className="mt-3" disabled={plan.price === 0}>Buy</Button>
-            </Card>
-          ))}
-        </div>
+
+        <Card className="p-4">
+          <Typography as="h2" variant="label-md-medium" color="primary">What each step costs</Typography>
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center justify-between text-q-body-sm-regular">
+              <span className="text-q-text-secondary">Storyboard still, portrait or set</span>
+              <span className="text-q-text-primary">{imageCredits()} credits</span>
+            </div>
+            {VIDEO_ENGINES.map((engine) => (
+              <div key={engine.id} className="flex items-center justify-between text-q-body-sm-regular">
+                <span className="text-q-text-secondary">5s clip · {engine.name}</span>
+                <span className="text-q-text-primary">{clipCredits(engine, 5)} credits</span>
+              </div>
+            ))}
+          </div>
+        </Card>
         <Typography as="h2" variant="title-sm-semi-bold" color="primary">Transaction History</Typography>
         {transactions.length === 0 ? (
           <Typography as="p" variant="body-sm-regular" color="secondary">No transactions yet.</Typography>

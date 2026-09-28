@@ -1,6 +1,7 @@
 import { ApiJobError } from "@higgsfield/fnf/errors";
 import { inferContentType } from "@higgsfield/fnf/media";
 import { createFileRoute } from "@tanstack/react-router";
+import { requireCurrentUser } from "@/lib/auth.server";
 import { createServerFnf } from "@/lib/fnf.server";
 import { validateUploadRequestHeaders } from "@/lib/upload-request-security";
 
@@ -18,6 +19,17 @@ export const Route = createFileRoute("/api/media/upload")({
               { status: rejection.status },
             );
           }
+          // Same-origin headers prove where the request came from, not who
+          // sent it. Without an identity check, anyone holding the URL could
+          // push media through the owner's Higgsfield account at their cost.
+          const auth = await requireCurrentUser();
+          if (!auth.ok) {
+            return Response.json(
+              { ok: false, error: { code: "auth_required", message: "Sign in to upload media." } },
+              { status: auth.status },
+            );
+          }
+
           const form = await request.formData();
           const file = form.get("file");
           if (!(file instanceof File)) {

@@ -4,10 +4,15 @@ export interface UploadRequestRejection {
   message: string;
 }
 
-/** Reject unsafe/declared-oversize requests before multipart parsing buffers the body. */
+/**
+ * Reject unsafe/declared-oversize requests before multipart parsing buffers the
+ * body. `label` names the kind of file in the size message, so the audio route
+ * does not tell the user their audio file is too large an image.
+ */
 export function validateUploadRequestHeaders(
   request: Request,
   maxBytes: number,
+  label = "Images",
 ): UploadRequestRejection | undefined {
   const origin = request.headers.get("origin");
   if (origin != null && origin !== new URL(request.url).origin) {
@@ -25,7 +30,7 @@ export function validateUploadRequestHeaders(
       return {
         status: 413,
         code: "file_too_large",
-        message: "Images must be 20 MB or smaller.",
+        message: `${label} must be ${Math.round(maxBytes / (1024 * 1024))} MB or smaller.`,
       };
     }
   }

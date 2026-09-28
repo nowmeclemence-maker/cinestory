@@ -22,16 +22,23 @@
 @import "tw-animate-css";
 
 /*
- * ─── CineStory palette (single source of truth) ─────────────────────────────
- * CineStory is its own studio: it must not wear Higgsfield's lime accent. Every
- * brand/semantic colour is declared once here as a `--cine-*` token, then the
- * inherited Quanta accents are remapped onto those tokens so the whole app
- * (buttons, tabs, badges, progress, icons) picks the palette up automatically.
+ * ─── Peyris brand palette (single source of truth) ──────────────────────────
  *
- * To re-skin CineStory, change the six hex values below — nothing else.
- * The companion `@theme inline` block further down exposes them as Tailwind
- * utilities (`text-cine-accent`, `bg-cine-success-soft`, `border-cine-danger`…)
- * so app code never hand-rolls an arbitrary palette colour again.
+ * CineStory is a Peyris app, so the brand layer is declared first as `--peyris-*`
+ * and everything else is derived from it. Copy the `--peyris-*` block verbatim
+ * into a sibling Peyris app and it wears the same identity; change one hex here
+ * and the whole app follows — buttons, tabs, badges, progress, icons, charts.
+ *
+ * Brand decisions, fixed:
+ *   · Surfaces stay black. The product is cinematic; a film sits on black.
+ *     The three surfaces are a deliberate near-black ramp rather than #000, so
+ *     cards separate from the page without ever reading as grey.
+ *   · The accent is violet. Burgundy is the warm secondary, for the moments
+ *     violet is too cold (editorial marks, highlights, fashion-side apps).
+ *
+ * `--cine-*` below are CineStory's semantic aliases. App code uses those, never
+ * `--peyris-*` directly, so a future app can keep the same component code with
+ * a different brand layer.
  *
  * These rules are deliberately UNLAYERED. Quanta emits its own theme variables
  * unlayered, and unlayered CSS beats every @layer regardless of specificity or
@@ -43,11 +50,28 @@
  */
 :root,
 html[data-theme="default-dark"] {
-    --cine-accent: #7c5cff;
-    --cine-accent-hover: #9075ff;
-    --cine-accent-press: #6a49f0;
+    /* ── Peyris brand layer ── */
+    --peyris-violet: #6d4aff;
+    --peyris-violet-hover: #8468ff;
+    --peyris-violet-press: #5a37e8;
+    --peyris-burgundy: #9b2242;
+    --peyris-burgundy-hover: #b52f52;
+
+    /* Black surface ramp. Primary is the page, secondary cards, tertiary raised. */
+    --peyris-surface: #08070b;
+    --peyris-surface-raised: #111016;
+    --peyris-surface-overlay: #1a1822;
+    --peyris-hairline: rgb(255 255 255 / 8%);
+
+    /* ── CineStory semantic layer (what app code consumes) ── */
+    --cine-accent: var(--peyris-violet);
+    --cine-accent-hover: var(--peyris-violet-hover);
+    --cine-accent-press: var(--peyris-violet-press);
     --cine-accent-soft: color-mix(in oklab, var(--cine-accent) 15%, transparent);
     --cine-accent-ring: color-mix(in oklab, var(--cine-accent) 45%, transparent);
+    --cine-ember: var(--peyris-burgundy);
+    --cine-ember-hover: var(--peyris-burgundy-hover);
+    --cine-ember-soft: color-mix(in oklab, var(--cine-ember) 18%, transparent);
 
     --cine-success: #3dd68c;
     --cine-success-soft: color-mix(in oklab, var(--cine-success) 13%, transparent);
@@ -64,6 +88,12 @@ html[data-theme="default-dark"] {
     --hf-color-icon-info: var(--cine-accent);
   --hf-color-state-success-fg: var(--cine-success);
   --hf-color-state-error-fg: var(--cine-danger);
+
+    /* Put the Studio on the same black as the landing page. Without this the
+     * two halves of the product read as two different apps. */
+    --hf-color-background-primary: var(--peyris-surface);
+    --hf-color-background-secondary: var(--peyris-surface-raised);
+    --hf-color-background-tertiary: var(--peyris-surface-overlay);
 }
 
 @layer components {
@@ -234,17 +264,27 @@ html[data-theme="default-dark"] {
   --color-cine-accent-press: var(--cine-accent-press);
   --color-cine-accent-soft: var(--cine-accent-soft);
   --color-cine-accent-ring: var(--cine-accent-ring);
+  --color-cine-ember: var(--cine-ember);
+  --color-cine-ember-hover: var(--cine-ember-hover);
+  --color-cine-ember-soft: var(--cine-ember-soft);
   --color-cine-success: var(--cine-success);
   --color-cine-success-soft: var(--cine-success-soft);
   --color-cine-danger: var(--cine-danger);
   --color-cine-danger-soft: var(--cine-danger-soft);
   --color-cine-warning: var(--cine-warning);
 
-  --color-chart-1: var(--hf-color-lime-500);
-  --color-chart-2: var(--hf-color-pink-500);
-  --color-chart-3: var(--hf-color-blue-500);
-  --color-chart-4: var(--hf-color-yellow-500);
-  --color-chart-5: var(--hf-color-purple-500);
+  /* Surfaces, so app code can say `bg-cine-surface` instead of `bg-black`. */
+  --color-cine-surface: var(--peyris-surface);
+  --color-cine-surface-raised: var(--peyris-surface-raised);
+  --color-cine-surface-overlay: var(--peyris-surface-overlay);
+  --color-cine-hairline: var(--peyris-hairline);
+
+  /* Charts run on the brand ramp, not Quanta's inherited lime. */
+  --color-chart-1: var(--cine-accent);
+  --color-chart-2: var(--cine-ember);
+  --color-chart-3: var(--cine-success);
+  --color-chart-4: var(--cine-warning);
+  --color-chart-5: var(--cine-accent-hover);
 
   --color-sidebar: var(--hf-color-background-secondary);
   --color-sidebar-foreground: var(--hf-color-text-primary);
