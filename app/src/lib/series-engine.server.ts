@@ -5,6 +5,7 @@ import { d1ClaimStore, withClaim } from "./story-claims";
 import { createStory, getStory } from "./story-engine.server";
 import type { StoryDTO } from "./story-engine.server";
 import { createServerFnf } from "./fnf.server";
+import { completeJsonWithRetry, extractJson } from "./llm-json";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -123,12 +124,8 @@ const BIBLE_INSTRUCTION = [
   "characters: only the people who appear on screen (max 6); appearance = concrete physical description; clothing = what they wear. settings: recurring places with a cinematic description.",
 ].join("\n");
 
-function extractJson(text: string): unknown {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end < 0 || end <= start) throw new ApiJobError("bible_parse_failed", "The showrunner's bible could not be parsed.");
-  return JSON.parse(text.slice(start, end + 1));
-}
+// JSON extraction is shared with the story engine (./llm-json), so the story
+// bible benefits from the same array/wrapper/fence tolerance + retry.
 
 /** Generate the story bible from a manuscript (characters go into the library). */
 async function generateBible(title: string, manuscript: string): Promise<Bible> {
@@ -136,14 +133,21 @@ async function generateBible(title: string, manuscript: string): Promise<Bible> 
   const [model] = await llm.listModels();
   if (!model) throw new ApiJobError("llm_unavailable", "No script-writing model is currently available.");
 
-  const res = await llm.complete({
-    model,
-    messages: [
-      { role: "system", content: BIBLE_INSTRUCTION },
-      { role: "user", content: `Series title: ${title}\n\nManuscript:\n${manuscript}` },
-    ],
-  });
-  const parsed = extractJson(String(res.content ?? "")) as Partial<Bible>;
+  const messages = [
+    { role: "system" as const, content: BIBLE_INSTRUCTION },
+    { role: "user" as const, content: `Series title: ${title}\n\nManuscript:\n${manuscript}` },
+  ];
+  const parsed = (await completeJsonWithRetry(
+    (extra) =>
+      llm
+        .complete({ model, messages: extra ? [...messages, { role: "user", content: extra }] : messages })
+        .then((res) => String(res.content ?? "")),
+    extractJson,
+  )) as Partial<Bible> | null;
+
+  if (parsed == null) {
+    throw new ApiJobError("bible_parse_failed", "The showrunner's bible could not be parsed.");
+  }
   const characters = Array.isArray(parsed.characters)
     ? parsed.characters.slice(0, 6).map((c: BibleCharacter) => ({
         name: String(c.name ?? "Character"),

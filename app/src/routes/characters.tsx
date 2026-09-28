@@ -9,8 +9,13 @@ import { Textarea } from "@higgsfield/quanta/textarea";
 import { Modal } from "@higgsfield/quanta/modal";
 import { Loader } from "@higgsfield/quanta/loader";
 import { toast } from "@higgsfield/quanta/sonner";
-import { Plus, Users, Pencil, Trash2 } from "lucide-react";
+import { Plus, Users, Pencil, Trash2, ImagePlus } from "lucide-react";
+import { useFnfMediaClient } from "@higgsfield/fnf-react";
 import { AppShell } from "@/layouts/app-shell";
+import { AssetLibraryModal, type AssetLibraryItem } from "@/components/asset-library";
+import { UploadField } from "@/components/upload-field";
+import { mediaRefToAssetItem } from "@/lib/higgsfield-generation-results";
+import { uploadAsset } from "@/lib/fnf.browser";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { Character } from "@/lib/services/characters";
@@ -42,6 +47,12 @@ const deleteCharacterFn = createServerFn({ method: "POST" })
     return deleteCharacter(data.id);
   });
 
+/** The user's own photo (from their most recent story) for "Use my photo". */
+const latestStoryPhotoFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { getLatestStorySelfie } = await import("@/lib/services/characters");
+  return getLatestStorySelfie();
+});
+
 function CharactersPage() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Character | null>(null);
@@ -65,6 +76,51 @@ function CharactersPage() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => deleteCharacterFn({ data: { id } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["characters"] }),
+  });
+
+  // ─── Reference photo ───────────────────────────────────────────────────────
+  // The picker hands back an ALREADY-uploaded selection ({ ref, src }); `ref` is
+  // what generation consumes. "Use my photo" fills from the user's own photo
+  // (stories.selfie_ref) via their latest story. Both update local state, so the
+  // modal's existing Save persists them — cancelling changes nothing.
+  const addReference = (selection: { ref?: unknown; src: string }) => {
+    if (!editing) return;
+    if (!selection.ref) {
+      toast.error("That item has no usable reference — pick another photo or upload one.");
+      return;
+    }
+    const image = { ref: selection.ref, src: selection.src } as Character["referenceImages"][number];
+    setEditing({ ...editing, referenceImages: [...editing.referenceImages, image] });
+    toast.success("Photo added — press Save to keep it");
+  };
+
+  // Named `applyMyPhoto`, not `useMyPhoto`: a `use*` prefix makes the linter
+  // treat it as a React Hook and reject calling it from a handler.
+  const applyMyPhoto = async () => {
+    if (!editing) return;
+    try {
+      const mine = await latestStoryPhotoFn();
+      if (!mine) {
+        toast.error("No photo of you found yet — upload one here, or add yours when you start a story.");
+        return;
+      }
+      setEditing({ ...editing, referenceImages: [...editing.referenceImages, mine] });
+      toast.success("Your photo added — press Save to keep it");
+    } catch {
+      toast.error("Could not read your story photo.");
+    }
+  };
+
+  const mediaClient = useFnfMediaClient();
+  const { data: libraryItems = [] } = useQuery({
+    queryKey: ["characters", "library", "images"],
+    enabled: editing != null,
+    queryFn: async () => {
+      const page = await mediaClient.list({ type: "image", size: 40 });
+      return page.items.map(mediaRefToAssetItem).filter((item): item is AssetLibraryItem => item != null);
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
   return (
@@ -119,6 +175,42 @@ function CharactersPage() {
             <Modal.Header>Edit Character</Modal.Header>
             {editing && (
               <div className="space-y-4 p-4">
+                {/* Reference photo — the face generation keeps consistent. */}
+                <div className="space-y-2 rounded-lg border border-q-border-subtle p-4">
+                  <Typography as="p" variant="label-md-medium" color="primary">Reference photo</Typography>
+                  <Typography as="p" variant="caption-sm-regular" color="secondary">
+                    Upload a photo, pick one from your library, or use your own. Without one this character has no face to keep consistent across scenes.
+                  </Typography>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {editing.referenceImages.length > 0 ? (
+                      <img
+                        src={editing.referenceImages[0].src}
+                        alt={editing.name}
+                        className="size-20 rounded-lg border border-q-border-subtle object-cover"
+                      />
+                    ) : null}
+                    <div className="min-w-56 flex-1">
+                      <AssetLibraryModal
+                        accept="image/*"
+                        items={libraryItems}
+                        onUpload={uploadAsset}
+                        pagination={{}}
+                        onSelect={addReference}
+                        trigger={
+                          <UploadField
+                            render={<button type="button" />}
+                            icon={ImagePlus}
+                            title={editing.referenceImages.length > 0 ? "Replace photo" : "Add photo"}
+                            subtitle="Upload or pick from your library"
+                          />
+                        }
+                      />
+                    </div>
+                    <Button variant="tertiary" size="sm" onClick={() => void applyMyPhoto()}>
+                      <Icon as={ImagePlus} size="sm" /> Use my photo
+                    </Button>
+                  </div>
+                </div>
                 <Input label="Name" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
                 <Textarea label="Biography" value={editing.biography} onChange={(e) => setEditing({ ...editing, biography: e.target.value })} />
                 <Textarea label="Appearance" value={editing.appearance} onChange={(e) => setEditing({ ...editing, appearance: e.target.value })} />

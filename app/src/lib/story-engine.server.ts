@@ -6,6 +6,7 @@ import { createServerFnf } from "./fnf.server";
 import type { GenerationMediaRef, SceneAspectRatio } from "./generation/port";
 import { getGenerationProvider } from "./generation/registry.server";
 import { d1ClaimStore, inMemoryClaimStore, withClaim } from "./story-claims";
+import { completeJsonWithRetry, extractJson, extractJsonArray, hasItems } from "./llm-json";
 import {
   DEFAULT_DURATION_SECONDS,
   estimateFilmCost,
@@ -252,14 +253,9 @@ interface Script {
   scenes: ScriptScene[];
 }
 
-function extractJson(text: string): unknown {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end < 0 || end <= start) {
-    throw new ApiJobError("script_parse_failed", "The director's script could not be parsed.");
-  }
-  return JSON.parse(text.slice(start, end + 1));
-}
+// JSON extraction lives in ./llm-json (pure + unit-tested). The old local
+// helper sliced from the first "{" to the last "}", which broke every
+// top-level ARRAY reply — see tests/llm-json.test.ts.
 
 async function generateScript(input: {
   idea: string;
@@ -286,17 +282,23 @@ async function generateScript(input: {
     '{"title": string, "hook": string, "cta": string, "musicMood": string, "colorGrade": string, "scenes": [{"description": string, "camera": string, "dialogue": string, "onScreenText": string}]}',
   ].join("\n");
 
-  const res = await llm.complete({
-    model,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: `The idea: ${input.idea}` },
-    ],
-  });
+  const messages = [
+    { role: "system" as const, content: system },
+    { role: "user" as const, content: `The idea: ${input.idea}` },
+  ];
+  // One stricter retry on a parse failure (formatting drift, not capability).
+  const parsed = (await completeJsonWithRetry(
+    (extra) =>
+      llm
+        .complete({ model, messages: extra ? [...messages, { role: "user", content: extra }] : messages })
+        .then((res) => String(res.content ?? "")),
+    extractJson,
+  )) as Partial<Script> | null;
 
-  const content = res.content ?? "";
-  const parsed = extractJson(String(content)) as Partial<Script>;
-  if (!parsed.scenes || !Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
+  if (parsed == null) {
+    throw new ApiJobError("script_parse_failed", "The director's script could not be parsed.");
+  }
+  if (!Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
     throw new ApiJobError("script_invalid", "The director's script was empty.");
   }
   return {
@@ -1011,15 +1013,23 @@ export async function proposeCharacters(storyId: string): Promise<CastMemberDTO[
     "appearance: concrete physical description (age, build, hair, skin, face). clothing: what they wear. biography: one short paragraph.",
   ].join("\n");
 
-  const res = await llm.complete({
-    model,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: `Idea: ${story.idea}\n\nScript: ${story.script_json ?? ""}` },
-    ],
-  });
-  const parsed = extractJson(String(res.content ?? "")) as Array<Record<string, unknown>>;
-  const proposals = Array.isArray(parsed) ? parsed.slice(0, MAX_CAST) : [];
+  const messages = [
+    { role: "system" as const, content: system },
+    { role: "user" as const, content: `Idea: ${story.idea}\n\nScript: ${story.script_json ?? ""}` },
+  ];
+  // The casting director answers with a top-level ARRAY; extractJsonArray also
+  // accepts a single-array wrapper ({"characters": [...]}).
+  const items = await completeJsonWithRetry(
+    (extra) =>
+      llm
+        .complete({ model, messages: extra ? [...messages, { role: "user", content: extra }] : messages })
+        .then((res) => String(res.content ?? "")),
+    (text) => {
+      const parsed = extractJsonArray(text);
+      return hasItems(parsed) ? parsed : null;
+    },
+  );
+  const proposals = (items ?? []).slice(0, MAX_CAST) as Array<Record<string, unknown>>;
   if (proposals.length === 0) {
     throw new ApiJobError("cast_invalid", "The casting director returned no characters.", { status: 502 });
   }
@@ -1234,15 +1244,22 @@ export async function proposeLocations(storyId: string): Promise<StoryDTO> {
     "name: the place (e.g. \"NYC rooftop\", \"Neo-Tokyo alley\"). description: 1-2 concrete cinematic sentences usable as a generation setting (space, light, time of day, mood).",
   ].join("\n");
 
-  const res = await llm.complete({
-    model,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: `Idea: ${story.idea}\n\nScript: ${story.script_json ?? ""}` },
-    ],
-  });
-  const parsed = extractJson(String(res.content ?? "")) as Array<Record<string, unknown>>;
-  const proposals = Array.isArray(parsed) ? parsed : [];
+  const messages = [
+    { role: "system" as const, content: system },
+    { role: "user" as const, content: `Idea: ${story.idea}\n\nScript: ${story.script_json ?? ""}` },
+  ];
+  // Same array shape as casting — and the same tolerant parser.
+  const items = await completeJsonWithRetry(
+    (extra) =>
+      llm
+        .complete({ model, messages: extra ? [...messages, { role: "user", content: extra }] : messages })
+        .then((res) => String(res.content ?? "")),
+    (text) => {
+      const parsed = extractJsonArray(text);
+      return hasItems(parsed) ? parsed : null;
+    },
+  );
+  const proposals = (items ?? []) as Array<Record<string, unknown>>;
   if (proposals.length === 0) {
     throw new ApiJobError("locations_invalid", "The set designer returned no locations.", { status: 502 });
   }

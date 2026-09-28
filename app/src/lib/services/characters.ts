@@ -119,6 +119,30 @@ export async function updateCharacter(id: string, data: Partial<Character>): Pro
   return getCharacter(id);
 }
 
+/**
+ * The user's own photo, taken from their most recent story (stories.selfie_ref).
+ * Lets the Character Library offer "Use my photo" without needing a story context
+ * — a library character is not tied to one story.
+ */
+export async function getLatestStorySelfie(): Promise<CharacterImage | null> {
+  const owner = await ownerKey();
+  const database = await db();
+  if (!database) return null;
+  const row = await database
+    .prepare(
+      "SELECT selfie_ref FROM stories WHERE owner_key = ? AND selfie_ref IS NOT NULL AND selfie_ref != '' ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(owner)
+    .first<{ selfie_ref: string }>();
+  if (!row?.selfie_ref) return null;
+  try {
+    const parsed = JSON.parse(row.selfie_ref) as CharacterImage;
+    return parsed?.ref && parsed?.src ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function deleteCharacter(id: string): Promise<void> {
   const owner = await ownerKey();
   const database = await db();
