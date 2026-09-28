@@ -33,6 +33,7 @@ import type { GalleryItem } from "@/components/gallery";
 import { HeroComposition } from "@/components/hero-composition";
 import { IconTile } from "@/components/icon-tile";
 import { ACCOUNT_ITEMS, NAV_ITEMS } from "@/lib/navigation";
+import { BRAND } from "@/lib/brand";
 import { MyProjects } from "@/components/my-projects";
 import type { MyProjectsProject } from "@/components/my-projects";
 import { ProjectActions } from "@/components/project-actions";
@@ -290,7 +291,7 @@ function StudioSidebar({
          */}
         <Sidebar.Section>
           <Sidebar.SectionHeader>
-            <Sidebar.SectionTitle>CineStory</Sidebar.SectionTitle>
+            <Sidebar.SectionTitle>{BRAND.product}</Sidebar.SectionTitle>
           </Sidebar.SectionHeader>
           <Sidebar.SectionItems>
             {NAV_ITEMS.map((item) => (

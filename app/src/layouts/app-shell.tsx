@@ -10,13 +10,14 @@ import { Sidebar } from "@higgsfield/quanta/sidebar";
 import { Typography } from "@higgsfield/quanta/typography";
 import { IconTile } from "@/components/icon-tile";
 import { appFaviconUrl, appMeta } from "@/lib/app-meta";
+import { BRAND } from "@/lib/brand";
 import { NAV_ITEMS, ACCOUNT_ITEMS, PAGE_TITLES } from "@/lib/navigation";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname;
-  const title = appMeta.og_title?.trim() || "CineStory";
+  const title = appMeta.og_title?.trim() || BRAND.full;
 
   const handleNav = useCallback(
     (path: string) => {
@@ -97,7 +98,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex items-center justify-between px-6 py-3 border-b border-q-border-subtle">
           <Typography as="h1" variant="title-sm-semi-bold" color="primary">
-            {PAGE_TITLES[currentPath] ?? "CineStory"}
+            {PAGE_TITLES[currentPath] ?? BRAND.product}
           </Typography>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-6">

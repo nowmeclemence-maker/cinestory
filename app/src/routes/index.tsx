@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { appMeta, toOwnAssetUrl } from "@/lib/app-meta";
 import { useViewerSession } from "@/lib/use-viewer-session";
+import { BRAND, BRAND_TITLE } from "@/lib/brand";
 import {
   CREDIT_PACKS, SIGNUP_CREDIT_GRANT, VIDEO_ENGINES,
   clipCredits, estimateFilm, imageCredits, packUsdPerCredit,
@@ -22,9 +23,9 @@ export const Route = createFileRoute("/")({
       "You approve every shot, and you see what each one costs before it runs.";
     return {
       meta: [
-        { title: "CineStory — the AI film studio you direct" },
+        { title: BRAND_TITLE },
         { name: "description", content: description },
-        { property: "og:title", content: "CineStory — the AI film studio you direct" },
+        { property: "og:title", content: BRAND_TITLE },
         { property: "og:description", content: description },
         { property: "og:type", content: "website" },
         { name: "twitter:card", content: "summary_large_image" },
@@ -88,7 +89,7 @@ const STEPS = [
 
 const FAQ = [
   {
-    q: "What is CineStory?",
+    q: `What is ${BRAND.full}?`,
     a: "A film pipeline rather than a prompt box. You go from idea to script, script to cast and sets, sets to a storyboard, and only then to video — reviewing at each stage instead of hoping one prompt lands.",
   },
   {
@@ -170,7 +171,10 @@ function Navbar() {
           <span className="flex size-8 items-center justify-center rounded-lg bg-cine-accent">
             <Clapperboard className="size-4 text-white" />
           </span>
-          <span className="text-lg font-bold tracking-tight text-white">CineStory</span>
+          <span className="text-lg tracking-tight">
+            <span className="font-medium text-white/55">{BRAND.family} </span>
+            <span className="font-bold text-white">{BRAND.product}</span>
+          </span>
         </a>
 
         <div className="hidden items-center gap-6 md:flex">
@@ -608,7 +612,10 @@ function Footer() {
             <span className="flex size-7 items-center justify-center rounded-lg bg-cine-accent">
               <Film className="size-3.5 text-white" />
             </span>
-            <span className="text-sm font-semibold text-white">CineStory</span>
+            <span className="text-sm">
+              <span className="font-medium text-white/55">{BRAND.family} </span>
+              <span className="font-semibold text-white">{BRAND.product}</span>
+            </span>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-white/40">
             <a href="#features" className="transition-colors hover:text-white">Features</a>
@@ -618,7 +625,7 @@ function Footer() {
             <a href={href} className="transition-colors hover:text-white">{primaryLabel}</a>
           </div>
           <p className="text-xs text-white/30">
-            &copy; {new Date().getFullYear()} CineStory, a Peyris studio.
+            &copy; {new Date().getFullYear()} {BRAND.full}
           </p>
         </div>
       </div>
