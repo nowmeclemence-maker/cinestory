@@ -14,156 +14,23 @@
  * covers what the forms do — the UI only supplies the selection and shows the
  * result.
  */
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { attachErrorMessage, attachReference, isAttachable, replaceReference } from "@/lib/character-references";
+import { createHarness, OWNER, wirePlatform, type D1Like } from "./helpers/d1";
 
-// ─── D1 shim over bun:sqlite (no new dependencies) ───────────────────────────
-
-type Row = Record<string, unknown>;
-
-class FakeStatement {
-  constructor(
-    private readonly db: Database,
-    private readonly sql: string,
-    private readonly params: unknown[] = [],
-  ) {}
-
-  bind(...params: unknown[]): FakeStatement {
-    return new FakeStatement(this.db, this.sql, params);
-  }
-
-  async first<T>(): Promise<T | null> {
-    const row = this.db.query(this.sql).get(...(this.params as never[]));
-    return (row ?? null) as T | null;
-  }
-
-  async all<T>(): Promise<{ results: T[] }> {
-    const rows = this.db.query(this.sql).all(...(this.params as never[]));
-    return { results: rows as T[] };
-  }
-
-  async run(): Promise<{ success: true }> {
-    this.db.query(this.sql).run(...(this.params as never[]));
-    return { success: true };
-  }
-}
-
-class FakeD1 {
-  constructor(private readonly db: Database) {}
-  prepare(sql: string): FakeStatement {
-    return new FakeStatement(this.db, sql);
-  }
-}
-
-// ─── Schema (only the columns the code under test touches) ───────────────────
-
-const SCHEMA = `
-CREATE TABLE characters (
-  id TEXT PRIMARY KEY,
-  owner_key TEXT NOT NULL,
-  name TEXT NOT NULL DEFAULT 'New Character',
-  role TEXT DEFAULT '',
-  biography TEXT DEFAULT '',
-  appearance TEXT DEFAULT '',
-  personality TEXT DEFAULT '',
-  clothing TEXT DEFAULT '',
-  voice_id TEXT DEFAULT '',
-  age TEXT DEFAULT '',
-  ethnicity TEXT DEFAULT '',
-  relationships TEXT DEFAULT '',
-  reference_images TEXT DEFAULT '[]',
-  reusable_prompts TEXT DEFAULT '',
-  portrait_job_id TEXT DEFAULT '',
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
-);
-CREATE TABLE stories (
-  id TEXT PRIMARY KEY,
-  owner_key TEXT NOT NULL,
-  project_id TEXT,
-  idea TEXT DEFAULT '',
-  template_id TEXT DEFAULT '',
-  location_id TEXT DEFAULT '',
-  duration_sec INTEGER DEFAULT 15,
-  scene_count INTEGER DEFAULT 3,
-  status TEXT NOT NULL DEFAULT 'scripting',
-  progress_label TEXT,
-  title TEXT,
-  hook TEXT,
-  cta TEXT,
-  music_mood TEXT,
-  color_grade TEXT,
-  script_json TEXT,
-  selfie_ref TEXT,
-  reference_ref TEXT,
-  final_video_key TEXT,
-  final_poster_key TEXT,
-  error TEXT,
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now')),
-  current_step TEXT NOT NULL DEFAULT 'old',
-  estimated_cost REAL NOT NULL DEFAULT 0,
-  spent_cost REAL NOT NULL DEFAULT 0,
-  music_track TEXT,
-  voiceover_url TEXT
-);
-CREATE TABLE story_scenes (
-  id TEXT PRIMARY KEY,
-  story_id TEXT NOT NULL,
-  idx INTEGER NOT NULL,
-  description TEXT DEFAULT '',
-  camera TEXT,
-  dialogue TEXT,
-  on_screen_text TEXT,
-  status TEXT NOT NULL DEFAULT 'pending',
-  image_job_id TEXT,
-  image_url TEXT,
-  video_job_id TEXT,
-  video_url TEXT,
-  error TEXT,
-  retry_count INTEGER NOT NULL DEFAULT 0,
-  location_name TEXT,
-  location_description TEXT,
-  location_ref TEXT,
-  location_source TEXT,
-  location_job_id TEXT,
-  dialogue_enabled INTEGER NOT NULL DEFAULT 1
-);
-CREATE TABLE story_characters (
-  story_id TEXT NOT NULL,
-  character_id TEXT NOT NULL,
-  scene_indices TEXT,
-  PRIMARY KEY (story_id, character_id)
-);
-`;
-
-const OWNER = "user:user-1:workspace:ws-1";
+// ─── Harness ────────────────────────────────────────────────────────────────
+// Shared with tests/script-preservation.test.ts: a real SQLite behind a D1 shim
+// plus the two platform mocks, so the REAL code paths run under test.
 
 let db: Database;
-let fakeD1: FakeD1;
-
-/** Register the platform mocks BEFORE any module under test is imported. */
-function wirePlatform(): void {
-  const bindingsStub = () => ({ bindings: () => ({ DB: fakeD1 }) });
-  const fnfStub = () => ({
-    createServerFnf: () => ({
-      profile: {
-        getUser: async () => ({ id: "user-1", workspaceId: "ws-1" }),
-        getCurrentWorkspace: async () => ({ id: "ws-1" }),
-      },
-    }),
-  });
-
-  mock.module("../src/lib/bindings.server", bindingsStub);
-  mock.module("../src/lib/fnf.server", fnfStub);
-}
+let fakeD1: D1Like;
 
 beforeEach(() => {
-  db = new Database(":memory:");
-  db.run(SCHEMA);
-  fakeD1 = new FakeD1(db);
-  wirePlatform();
+  const harness = createHarness();
+  db = harness.db;
+  fakeD1 = harness.d1;
+  wirePlatform(fakeD1);
 });
 
 // ─── The shared rule (what both forms apply to a picked photo) ───────────────

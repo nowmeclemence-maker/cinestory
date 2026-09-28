@@ -10,7 +10,7 @@ import { Textarea } from "@higgsfield/quanta/textarea";
 import { Loader } from "@higgsfield/quanta/loader";
 import { toast } from "@higgsfield/quanta/sonner";
 import {
-  ArrowLeft, ArrowUp, ArrowDown, Plus, Trash2, Wand2, Check,
+  ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Plus, Trash2, Wand2, Check,
   Clapperboard, Film, Camera, RefreshCw, Coins, UserRound, ImagePlus, Users,
   Volume2, Music as IconMusic, Mic, Upload, RotateCcw,
 } from "lucide-react";
@@ -34,12 +34,15 @@ import { triggerAssembly } from "@/lib/story.browser";
 import { MUSIC_PRESETS } from "@/lib/music-presets";
 import type { StoryDTO, SceneDTO } from "@/lib/story-engine.server";
 import type { CastMemberDTO } from "@/lib/story-engine.server";
-import { sceneDurationSeconds, STORY_LOCATIONS, videoClipCostCredits } from "@/lib/story-templates";
+import { sceneDurationSeconds, stepIndex, stepLabel, STORY_LOCATIONS, STORY_STEPS, videoClipCostCredits } from "@/lib/story-templates";
 
 export const Route = createFileRoute("/workspace")({
   component: WorkspacePage,
   validateSearch: (search: Record<string, unknown>) => ({
     story: typeof search.story === "string" ? search.story : undefined,
+    // The step on screen, so a step is linkable, bookmarkable and survives a
+    // refresh: /workspace?story=<id>&step=script
+    step: typeof search.step === "string" ? search.step : undefined,
   }),
 });
 
@@ -52,7 +55,8 @@ interface SceneEdit {
 }
 
 function WorkspacePage() {
-  const { story: storyId } = Route.useSearch();
+  const { story: storyId, step: stepParam } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const qc = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -102,12 +106,13 @@ function WorkspacePage() {
     (candidate) => !cast.some((member) => member.characterId === candidate.id),
   );
 
-  // Load draft content into the editor once the story lands in the Script step.
-  // Done as render-time state adjustment (conditional + converging), keyed on
-  // story id + status so live edits are never clobbered by a refetch.
+  // Load script content into the editor as soon as the story HAS a script — not
+  // only at the Script step. Reviewing Script later must be editable (that is how
+  // a drifted scene gets fixed), and the story keeps its own step throughout.
+  // Keyed on story id alone so a refetch never clobbers live edits.
   const [editor, setEditor] = useState<{ title: string; hook: string; cta: string; scenes: SceneEdit[] } | null>(null);
   const [editorKey, setEditorKey] = useState("");
-  const draftKey = story && story.status === "draft" ? `${story.id}:draft` : "none";
+  const draftKey = story && story.scenes.length > 0 ? `${story.id}:script` : "none";
   if (draftKey !== editorKey) {
     setEditorKey(draftKey);
     setEditor(
@@ -129,7 +134,7 @@ function WorkspacePage() {
   }
 
   const sceneCount = useMemo(
-    () => (story && story.status === "draft" ? (editor?.scenes.length ?? story.sceneCount) : story?.sceneCount ?? 0),
+    () => (editor ? editor.scenes.length : story?.sceneCount ?? 0),
     [editor, story],
   );
 
@@ -182,6 +187,9 @@ function WorkspacePage() {
           hook: editor.hook,
           cta: editor.cta,
           scenes: editor.scenes.map((scene, idx) => ({
+            // The row this edit targets, so saving keeps a scene's generated
+            // image instead of rebuilding every scene row from scratch.
+            id: scene.id.startsWith("local-") ? undefined : scene.id,
             idx,
             description: scene.description,
             camera: scene.camera,
@@ -586,6 +594,131 @@ function WorkspacePage() {
     }
   };
 
+  // ─── Step navigation ────────────────────────────────────────────────────────
+  // Production only moves forward, but the VIEW can move back: every step the
+  // story has REACHED is openable, so a mistake spotted later (a drifted
+  // storyboard image) can be corrected at its source instead of being a dead end.
+  // The story's own step never changes — nothing already generated is touched.
+  const reachedIdx = story ? stepIndex(story.currentStep) : -1;
+  const requestedIdx = stepIndex(stepParam);
+  const viewStep: string =
+    story && requestedIdx >= 0 && reachedIdx >= 0 && requestedIdx <= reachedIdx
+      ? (stepParam as string)
+      : story?.currentStep ?? "idea";
+  const viewIdx = stepIndex(viewStep);
+  const reviewing = story != null && viewIdx >= 0 && reachedIdx >= 0 && viewIdx < reachedIdx;
+
+  const goToStep = (stepId: string) => {
+    if (!storyId) return;
+    void navigate({ search: { story: storyId, step: stepId } });
+  };
+  const backToCurrentStep = () => {
+    if (story) goToStep(story.currentStep);
+  };
+  // The header arrow goes ONE STEP BACK, not out of the story. Only at the first
+  // step does it leave for the Studio.
+  const goBackOneStep = () => {
+    if (viewIdx > 0) goToStep(STORY_STEPS[viewIdx - 1].id);
+    else window.location.href = "/studio";
+  };
+
+  const reviewedView = reviewing ? (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-q-brand-primary/40 bg-q-brand-primary/5 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <Typography as="h2" variant="title-sm-semi-bold" color="primary">
+              Reviewing {stepLabel(viewStep)}
+            </Typography>
+            <Typography as="p" variant="caption-sm-regular" color="secondary" className="mt-1">
+              Production is at {stepLabel(story.currentStep)}. Nothing already generated changes here —
+              images and clips stay exactly as they are until you regenerate them.
+            </Typography>
+          </div>
+          <Button variant="tertiary" size="md" onClick={backToCurrentStep}>
+            <Icon as={ArrowRight} size="sm" /> Back to {stepLabel(story.currentStep)}
+          </Button>
+        </div>
+      </div>
+
+      {viewStep === "script" && editor ? (
+        <ScriptEditor
+          editor={editor}
+          sceneCount={sceneCount}
+          saving={saving}
+          validating={validating}
+          regenerating={regenerating}
+          validateLabel={`Done — back to ${stepLabel(story.currentStep)}`}
+          onTitle={(title) => setEditor({ ...editor, title })}
+          onHook={(hook) => setEditor({ ...editor, hook })}
+          onCta={(cta) => setEditor({ ...editor, cta })}
+          onPatchScene={patchScene}
+          onAddScene={addScene}
+          onRemoveScene={removeScene}
+          onMoveScene={moveScene}
+          onSave={() => void handleSave()}
+          onValidate={backToCurrentStep}
+          onRegenerate={() => void handleRegenerate()}
+        />
+      ) : viewStep === "characters" ? (
+        <CastingView
+          story={story}
+          cast={cast}
+          availableCharacters={availableCharacters}
+          busy={castBusy}
+          validating={validating}
+          error={stageError}
+          validateLabel={`Done — back to ${stepLabel(story.currentStep)}`}
+          onPropose={() => void handleProposeCast()}
+          onLink={(characterId) => void handleLinkCharacter(characterId)}
+          onUnlink={(characterId) => void handleUnlinkCharacter(characterId)}
+          onPortrait={(characterId) => void handleGeneratePortrait(characterId)}
+          onAddReference={(characterId, item, opts) => void handleAddReference(characterId, item, opts)}
+          onUseSelfie={(characterId) => void handleUseSelfie(characterId)}
+          onValidate={backToCurrentStep}
+        />
+      ) : viewStep === "locations" ? (
+        <LocationsView
+          story={story}
+          busy={setBusy}
+          validating={validating}
+          error={stageError}
+          validateLabel={`Done — back to ${stepLabel(story.currentStep)}`}
+          onPropose={() => void handleProposeLocations()}
+          onSetPreset={(sceneId, preset) =>
+            void handleSetSceneLocation(sceneId, {
+              name: preset.title,
+              description: preset.description,
+              source: "preset",
+            })
+          }
+          onSetFree={(sceneId, name, description) =>
+            void handleSetSceneLocation(sceneId, { name, description, source: "free" })
+          }
+          onGenerateSet={(sceneId) => void handleGenerateSetImage(sceneId)}
+          onUploadSetPhoto={(sceneId, file) => void handleUploadSetPhoto(sceneId, file)}
+          onValidate={backToCurrentStep}
+        />
+      ) : viewStep === "storyboard" ? (
+        <StoryboardView
+          story={story}
+          error={stageError}
+          validating={validating}
+          regeneratingScene={regeneratingScene}
+          validateLabel={`Done — back to ${stepLabel(story.currentStep)}`}
+          onValidate={backToCurrentStep}
+          onRegenerateImage={(sceneId) => void handleRegenerateSceneImage(sceneId)}
+        />
+      ) : (
+        <div className="rounded-xl border border-q-border-subtle bg-q-background-secondary p-4">
+          <Typography as="p" variant="body-sm-regular" color="secondary">
+            {stepLabel(viewStep)} is already complete.
+          </Typography>
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -608,9 +741,15 @@ function WorkspacePage() {
             {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <a href="/studio" aria-label="Back to stories" className="text-q-text-secondary hover:text-q-text-primary">
+                <button
+                  type="button"
+                  onClick={goBackOneStep}
+                  aria-label={viewIdx > 0 ? `Back to ${stepLabel(STORY_STEPS[viewIdx - 1].id)}` : "Back to stories"}
+                  title={viewIdx > 0 ? `Back to ${stepLabel(STORY_STEPS[viewIdx - 1].id)}` : "Back to stories"}
+                  className="text-q-text-secondary hover:text-q-text-primary"
+                >
                   <Icon as={ArrowLeft} size="md" />
-                </a>
+                </button>
                 <div>
                   <Typography as="h1" variant="title-lg-semi-bold" color="primary">
                     Story Workspace
@@ -628,9 +767,9 @@ function WorkspacePage() {
             </div>
 
             {/* Step bar */}
-            <StepBar currentStep={story.currentStep} />
+            <StepBar currentStep={story.currentStep} viewStep={viewStep} onSelectStep={goToStep} />
 
-            {story.status === "draft" && editor ? (
+            {reviewedView ?? (story.status === "draft" && editor ? (
               <ScriptEditor
                 editor={editor}
                 sceneCount={sceneCount}
@@ -743,7 +882,7 @@ function WorkspacePage() {
               <div className="flex h-48 items-center justify-center">
                 <Loader size="md" color="neutral" />
               </div>
-            )}
+            ))}
           </>
         ) : null}
       </div>
@@ -754,7 +893,7 @@ function WorkspacePage() {
 // ─── Script editor (Lot A) ──────────────────────────────────────────────────
 
 function ScriptEditor({
-  editor, sceneCount, saving, validating, regenerating,
+  editor, sceneCount, saving, validating, regenerating, validateLabel,
   onTitle, onHook, onCta, onPatchScene, onAddScene, onRemoveScene, onMoveScene,
   onSave, onValidate, onRegenerate,
 }: {
@@ -763,6 +902,8 @@ function ScriptEditor({
   saving: boolean;
   validating: boolean;
   regenerating: boolean;
+  /** Overridden in review mode (e.g. "Done — back to Storyboard"). */
+  validateLabel?: string;
   onTitle: (v: string) => void;
   onHook: (v: string) => void;
   onCta: (v: string) => void;
@@ -858,7 +999,7 @@ function ScriptEditor({
           </Button>
           <Button variant="marketingPrimary" size="md" disabled={validating || editor.scenes.length === 0 || !editor.title.trim()} onClick={onValidate}>
             {validating ? <Loader size="xs" color="neutral" /> : <Icon as={Film} size="sm" />}
-            Validate script & start production
+            {validateLabel ?? "Validate script & start production"}
           </Button>
         </div>
         <p className="mt-2 text-right text-xs text-q-text-tertiary">
@@ -1019,7 +1160,7 @@ function AudioView({
 
 function LocationsView({
   story, busy, validating, error,
-  onPropose, onSetPreset, onSetFree, onGenerateSet, onUploadSetPhoto, onValidate,
+  onPropose, onSetPreset, onSetFree, onGenerateSet, onUploadSetPhoto, onValidate, validateLabel,
 }: {
   story: StoryDTO;
   busy: string | null;
@@ -1031,6 +1172,8 @@ function LocationsView({
   onGenerateSet: (sceneId: string) => void;
   onUploadSetPhoto: (sceneId: string, file: File) => void;
   onValidate: () => void;
+  /** Overridden in review mode (e.g. "Done — back to Storyboard"). */
+  validateLabel?: string;
 }) {
   const imageCost = story.sceneCount * 1.5;
   const anySet = story.scenes.some((scene) => (scene.locationDescription ?? "").trim());
@@ -1062,7 +1205,7 @@ function LocationsView({
           {anySet && (
             <Button variant="marketingPrimary" size="md" disabled={validating || !allSet} onClick={onValidate}>
               {validating ? <Loader size="xs" color="neutral" /> : <Icon as={Film} size="sm" />}
-              {allSet ? `Validate sets & build storyboard (~${Math.round(imageCost)} credits)` : "Waiting for every scene's set…"}
+              {validateLabel ?? (allSet ? `Validate sets & build storyboard (~${Math.round(imageCost)} credits)` : "Waiting for every scene's set…")}
             </Button>
           )}
         </div>
@@ -1189,7 +1332,7 @@ type LibraryCharacter = { id: string; name: string; role: string; appearance: st
 
 function CastingView({
   story, cast, availableCharacters, busy, validating, error,
-  onPropose, onLink, onUnlink, onPortrait, onAddReference, onUseSelfie, onValidate,
+  onPropose, onLink, onUnlink, onPortrait, onAddReference, onUseSelfie, onValidate, validateLabel,
 }: {
   story: StoryDTO;
   cast: CastMemberDTO[];
@@ -1204,6 +1347,8 @@ function CastingView({
   onAddReference: (characterId: string, item: { ref?: unknown; src: string }, opts?: { replace?: boolean }) => void;
   onUseSelfie: (characterId: string) => void;
   onValidate: () => void;
+  /** Overridden in review mode (e.g. "Done — back to Storyboard"). */
+  validateLabel?: string;
 }) {
   const imageCost = story.sceneCount * 1.5;
   const allHavePhotos = cast.length > 0 && cast.every((m) => m.hasReference || m.portraitJobId);
@@ -1274,13 +1419,13 @@ function CastingView({
             onClick={onValidate}
           >
             {validating ? <Loader size="xs" color="neutral" /> : <Icon as={Film} size="sm" />}
-            {cast.length === 0
+            {validateLabel ?? (cast.length === 0
               ? "Skip casting & continue"
               : allHavePhotos
                 ? "Continue to sets"
                 : missingPhotos === cast.length
                   ? "Continue to sets (your photo will be used)"
-                  : `Continue to sets (${missingPhotos} without a photo)`}
+                  : `Continue to sets (${missingPhotos} without a photo)`)}
           </Button>
         </div>
       </div>
@@ -1414,7 +1559,7 @@ function CastingView({
 
 function StoryboardView({
   story, error, validating, regeneratingScene,
-  onValidate, onRegenerateImage,
+  onValidate, onRegenerateImage, validateLabel,
 }: {
   story: StoryDTO;
   error: string | null;
@@ -1422,6 +1567,8 @@ function StoryboardView({
   regeneratingScene: string | null;
   onValidate: () => void;
   onRegenerateImage: (sceneId: string) => void;
+  /** Overridden in review mode (e.g. "Done — back to Audio"). */
+  validateLabel?: string;
 }) {
   const secondsPerScene = sceneDurationSeconds(story.durationSec, story.sceneCount);
   const videoCost = story.scenes.length * videoClipCostCredits(secondsPerScene);
@@ -1460,7 +1607,7 @@ function StoryboardView({
             onClick={onValidate}
           >
             {validating ? <Loader size="xs" color="neutral" /> : <Icon as={Film} size="sm" />}
-            {allReady ? `Validate storyboard & record (${Math.round(videoCost)} credits)` : "Waiting for all images…"}
+            {validateLabel ?? (allReady ? `Validate storyboard & record (${Math.round(videoCost)} credits)` : "Waiting for all images…")}
           </Button>
         </div>
       </div>

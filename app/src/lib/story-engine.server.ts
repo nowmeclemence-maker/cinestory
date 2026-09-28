@@ -7,6 +7,7 @@ import type { GenerationMediaRef, SceneAspectRatio } from "./generation/port";
 import { getGenerationProvider } from "./generation/registry.server";
 import { d1ClaimStore, inMemoryClaimStore, withClaim } from "./story-claims";
 import { completeJsonWithRetry, extractJson, extractJsonArray, hasItems } from "./llm-json";
+import { expandWardrobeBackReferences, wardrobePromptLine } from "./wardrobe";
 import {
   DEFAULT_DURATION_SECONDS,
   estimateFilmCost,
@@ -277,6 +278,7 @@ async function generateScript(input: {
     `Setting: ${input.locationDescription}.`,
     `Write EXACTLY ${input.sceneCount} scenes, each a distinct visual beat that reads as a continuous story arc: hook, build, turn, payoff/CTA.`,
     "Every scene must feature the SAME main subject (the user's own photo will be used as their likeness) for full visual continuity — describe wardrobe, expression and pose so they stay consistent scene to scene.",
+    "Restate the wardrobe EXPLICITLY in every scene (garment, colour, footwear, accessories). Never write \"the same outfit\", \"same clothes\" or any other back-reference: each scene is generated on its own, so a back-reference produces a different outfit.",
     "Dialogue/narration lines must be short (under 18 words) — they will be spoken on camera or read as voiceover.",
     "Respond with ONLY strict JSON, no markdown fences, matching exactly this shape:",
     '{"title": string, "hook": string, "cta": string, "musicMood": string, "colorGrade": string, "scenes": [{"description": string, "camera": string, "dialogue": string, "onScreenText": string}]}',
@@ -501,6 +503,8 @@ function scriptLockedError() {
 }
 
 export interface ScriptSceneEdit {
+  /** The existing scene row this edit targets (absent for a newly added scene). */
+  id?: string;
   idx: number;
   description: string;
   camera: string;
@@ -509,24 +513,35 @@ export interface ScriptSceneEdit {
 }
 
 /**
- * Lot A — persist a user-edited script (title, hook, scenes). Only allowed at
- * the Script step, before any generation; scenes are rebuilt so reordering,
- * insertions and deletions stay index-consistent. Nothing is charged.
+ * Lot A — persist a user-edited script (title, hook, scenes). Nothing is charged.
+ *
+ * Editable at the Script step AND when the script is reopened later: spotting a
+ * drifted scene in the storyboard must not be a dead end, so the wording can be
+ * fixed at its source. Only a film that is being cut or is already finished is
+ * refused.
+ *
+ * Crucially, generated media is PRESERVED. This used to delete every scene row
+ * and re-insert them, which silently threw away the storyboard images and clips
+ * the moment the script was saved. Scenes are now matched by id: text fields are
+ * updated in place, media columns (image/video job ids, urls, set, status) are
+ * carried over untouched, and only scenes the user actually added or removed
+ * change the row count. A user regenerates the specific scenes they want redone.
  */
 export async function updateScript(
   storyId: string,
   edits: { title: string; hook: string; cta?: string; scenes: ScriptSceneEdit[] },
 ): Promise<StoryDTO> {
   const { db, story } = await loadOwnedStory(storyId);
-  if (story.status !== "draft") throw scriptLockedError();
+  if (story.status === "assembling" || story.status === "ready") throw scriptLockedError();
 
-  const scenes = edits.scenes.map((scene) => ({
+  const trimmed = edits.scenes.map((scene) => ({
+    id: scene.id ?? "",
     description: scene.description ?? "",
     camera: scene.camera ?? "",
     dialogue: scene.dialogue ?? "",
     onScreenText: scene.onScreenText ?? "",
   }));
-  if (scenes.length === 0) {
+  if (trimmed.length === 0) {
     throw new ApiJobError("script_empty", "A script needs at least one scene.", { status: 400 });
   }
 
@@ -542,7 +557,7 @@ export async function updateScript(
     cta: edits.cta ?? parsed?.cta ?? "",
     musicMood: parsed?.musicMood ?? "cinematic, emotional",
     colorGrade: parsed?.colorGrade ?? "warm cinematic",
-    scenes: scenes.map((scene) => ({
+    scenes: trimmed.map((scene) => ({
       description: scene.description,
       camera: scene.camera,
       dialogue: scene.dialogue,
@@ -550,21 +565,33 @@ export async function updateScript(
     })),
   };
 
-  const sceneRows: SceneRow[] = scenes.map((scene, idx) => ({
-    id: crypto.randomUUID(),
-    story_id: storyId,
-    idx,
-    description: scene.description,
-    camera: scene.camera,
-    dialogue: scene.dialogue,
-    on_screen_text: scene.onScreenText,
-    status: "pending",
-    image_job_id: null,
-    image_url: null,
-    video_job_id: null,
-    video_url: null,
-    error: null,
-  }));
+  // Match edited scenes to existing rows so their generated media survives.
+  const existing = await loadScenes(db, storyId);
+  const byId = new Map(existing.map((scene) => [scene.id, scene]));
+
+  const sceneRows: SceneRow[] = trimmed.map((edit, idx) => {
+    const prev = byId.get(edit.id);
+    return {
+      ...(prev ?? {}),
+      id: prev?.id ?? crypto.randomUUID(),
+      story_id: storyId,
+      idx,
+      description: edit.description,
+      camera: edit.camera,
+      dialogue: edit.dialogue,
+      on_screen_text: edit.onScreenText,
+      // Media + generation state carried over verbatim (nothing regenerated).
+      status: prev?.status ?? "pending",
+      image_job_id: prev?.image_job_id ?? null,
+      image_url: prev?.image_url ?? null,
+      video_job_id: prev?.video_job_id ?? null,
+      video_url: prev?.video_url ?? null,
+      error: prev?.error ?? null,
+    } as SceneRow;
+  });
+
+  const keptIds = sceneRows.map((scene) => scene.id);
+  const placeholders = keptIds.map(() => "?").join(",");
 
   if (!db) {
     const dev = devState().stories.get(storyId);
@@ -586,8 +613,26 @@ export async function updateScript(
           "UPDATE stories SET title=?, hook=?, cta=?, script_json=?, scene_count=?, updated_at=datetime('now') WHERE id=?",
         )
         .bind(nextScript.title, nextScript.hook, nextScript.cta, JSON.stringify(nextScript), sceneRows.length, storyId),
-      db.prepare("DELETE FROM story_scenes WHERE story_id = ?").bind(storyId),
-      ...sceneRows.map((scene) => insertSceneStatement(db, scene)),
+      // Upsert by id: an edited scene keeps its row (and therefore its image),
+      // a newly added one is inserted as pending.
+      ...sceneRows.map((scene) =>
+        db
+          .prepare(
+            `INSERT INTO story_scenes (id, story_id, idx, description, camera, dialogue, on_screen_text, status)
+             VALUES (?,?,?,?,?,?,?,?)
+             ON CONFLICT(id) DO UPDATE SET
+               idx = excluded.idx,
+               description = excluded.description,
+               camera = excluded.camera,
+               dialogue = excluded.dialogue,
+               on_screen_text = excluded.on_screen_text`,
+          )
+          .bind(scene.id, storyId, scene.idx, scene.description, scene.camera, scene.dialogue, scene.on_screen_text, scene.status),
+      ),
+      // Only scenes the user actually removed disappear.
+      db
+        .prepare(`DELETE FROM story_scenes WHERE story_id = ? AND id NOT IN (${placeholders})`)
+        .bind(storyId, ...keptIds),
     ]);
   }
   return getStory(storyId);
@@ -1494,6 +1539,16 @@ async function submitSceneImage(
     // selfie (if no protagonist inherited it), then the product/logo ref.
     const cast = await loadCast(db, storyId);
     const sceneCast = castForScene(cast, scene.idx);
+
+    // Wardrobe continuity: a scene that says "the same outfit" tells the image
+    // model nothing (it sees one scene at a time), which is what made scene 3
+    // drift. Substitute the cast's explicit wardrobe and restate it outright.
+    const wardrobe = cast
+      .map((member) => member.clothing?.trim())
+      .filter((clothing): clothing is string => Boolean(clothing))
+      .join("; ");
+    const sceneDescription = expandWardrobeBackReferences(scene.description, wardrobe);
+
     const seen = new Set(sceneCast.refs.map((r) => r.id).filter(Boolean));
     const images: GenerationMediaRef[] = [...sceneCast.refs];
     if (selfie?.ref && !seen.has(selfie.ref.id)) images.push(selfie.ref as GenerationMediaRef);
@@ -1520,8 +1575,9 @@ async function submitSceneImage(
     const instruction = [
       `Cinematic still frame for a ${template.title} short film.`,
       locationLine,
-      scene.description,
+      sceneDescription,
       scene.camera ? `Camera: ${scene.camera}.` : "",
+      wardrobePromptLine(wardrobe),
       castLine,
       "Photoreal, color-graded, professional cinematography.",
     ]

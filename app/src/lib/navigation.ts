@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Clapperboard, Film, Users, MapPin,
   Image, Music, Mic, Volume2, Library, Download,
   CreditCard, Receipt, User, Settings, HelpCircle,
-  Sparkles, Tv, Tag,
+  Sparkles, Tv, Tag, BookOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -39,6 +39,7 @@ export const ACCOUNT_ITEMS: NavItem[] = [
   { label: "Pricing", path: "/pricing", icon: Tag },
   { label: "Account", path: "/account", icon: User },
   { label: "Settings", path: "/settings", icon: Settings },
+  { label: "How to use", path: "/guide", icon: BookOpen },
   { label: "Help", path: "/help", icon: HelpCircle },
 ];
 
@@ -59,6 +60,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/billing": "Billing",
   "/account": "Account",
   "/settings": "Settings",
+  "/guide": "How to use CineStory",
   "/help": "Help Center",
   "/pricing": "Pricing",
 };

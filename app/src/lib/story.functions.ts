@@ -64,6 +64,8 @@ export const listStoriesFn = createServerFn({ method: "POST" })
   .handler(({ data }) => listStories(data.projectId));
 
 const sceneEditSchema = z.object({
+  /** Existing scene row this edit targets; omitted for a newly added scene. */
+  id: z.string().optional(),
   idx: z.number().int().nonnegative(),
   description: z.string(),
   camera: z.string(),

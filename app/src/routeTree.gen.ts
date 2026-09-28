@@ -23,6 +23,7 @@ import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as MusicRouteImport } from './routes/music'
 import { Route as LocationsRouteImport } from './routes/locations'
 import { Route as HelpRouteImport } from './routes/help'
+import { Route as GuideRouteImport } from './routes/guide'
 import { Route as ExportsRouteImport } from './routes/exports'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CreditsRouteImport } from './routes/credits'
@@ -108,6 +109,11 @@ const HelpRoute = HelpRouteImport.update({
   path: '/help',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GuideRoute = GuideRouteImport.update({
+  id: '/guide',
+  path: '/guide',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ExportsRoute = ExportsRouteImport.update({
   id: '/exports',
   path: '/exports',
@@ -188,6 +194,7 @@ export interface FileRoutesByFullPath {
   '/credits': typeof CreditsRoute
   '/dashboard': typeof DashboardRoute
   '/exports': typeof ExportsRoute
+  '/guide': typeof GuideRoute
   '/help': typeof HelpRoute
   '/locations': typeof LocationsRoute
   '/music': typeof MusicRoute
@@ -218,6 +225,7 @@ export interface FileRoutesByTo {
   '/credits': typeof CreditsRoute
   '/dashboard': typeof DashboardRoute
   '/exports': typeof ExportsRoute
+  '/guide': typeof GuideRoute
   '/help': typeof HelpRoute
   '/locations': typeof LocationsRoute
   '/music': typeof MusicRoute
@@ -249,6 +257,7 @@ export interface FileRoutesById {
   '/credits': typeof CreditsRoute
   '/dashboard': typeof DashboardRoute
   '/exports': typeof ExportsRoute
+  '/guide': typeof GuideRoute
   '/help': typeof HelpRoute
   '/locations': typeof LocationsRoute
   '/music': typeof MusicRoute
@@ -281,6 +290,7 @@ export interface FileRouteTypes {
     | '/credits'
     | '/dashboard'
     | '/exports'
+    | '/guide'
     | '/help'
     | '/locations'
     | '/music'
@@ -311,6 +321,7 @@ export interface FileRouteTypes {
     | '/credits'
     | '/dashboard'
     | '/exports'
+    | '/guide'
     | '/help'
     | '/locations'
     | '/music'
@@ -341,6 +352,7 @@ export interface FileRouteTypes {
     | '/credits'
     | '/dashboard'
     | '/exports'
+    | '/guide'
     | '/help'
     | '/locations'
     | '/music'
@@ -372,6 +384,7 @@ export interface RootRouteChildren {
   CreditsRoute: typeof CreditsRoute
   DashboardRoute: typeof DashboardRoute
   ExportsRoute: typeof ExportsRoute
+  GuideRoute: typeof GuideRoute
   HelpRoute: typeof HelpRoute
   LocationsRoute: typeof LocationsRoute
   MusicRoute: typeof MusicRoute
@@ -494,6 +507,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HelpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/guide': {
+      id: '/guide'
+      path: '/guide'
+      fullPath: '/guide'
+      preLoaderRoute: typeof GuideRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/exports': {
       id: '/exports'
       path: '/exports'
@@ -604,6 +624,7 @@ const rootRouteChildren: RootRouteChildren = {
   CreditsRoute: CreditsRoute,
   DashboardRoute: DashboardRoute,
   ExportsRoute: ExportsRoute,
+  GuideRoute: GuideRoute,
   HelpRoute: HelpRoute,
   LocationsRoute: LocationsRoute,
   MusicRoute: MusicRoute,
