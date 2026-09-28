@@ -55,6 +55,8 @@ export interface SceneDTO {
   locationJobId: string | null;
   // Lot E: dialogue toggle
   dialogueEnabled: boolean;
+  // Clip review gate at the Video step.
+  videoApproved: boolean;
 }
 
 export interface StoryDTO {
@@ -83,6 +85,8 @@ export interface StoryDTO {
   // Lot E: audio
   musicTrack: { name: string; url: string } | null;
   voiceoverUrl: string | null;
+  /** The finished film has been accepted at the Final cut review. */
+  finalApproved: boolean;
   createdAt: string;
   updatedAt: string;
   scenes: SceneDTO[];
@@ -111,6 +115,8 @@ interface StoryRow {
   selfie_ref: string | null;
   reference_ref: string | null;
   final_video_key: string | null;
+  /** 1 once the finished film has been accepted at the Final cut review. */
+  final_approved?: number;
   final_poster_key: string | null;
   music_track?: string | null;
   voiceover_url?: string | null;
@@ -130,8 +136,14 @@ interface SceneRow {
   status: string;
   image_job_id: string | null;
   image_url: string | null;
+  /** R2 key of the mirrored still (provider URLs expire in ~7 days). */
+  image_key?: string | null;
   video_job_id: string | null;
   video_url: string | null;
+  /** R2 key of the mirrored clip. */
+  video_key?: string | null;
+  /** 1 once the user has reviewed and approved this clip. */
+  video_approved?: number;
   error: string | null;
   retry_count?: number;
   // Lot D: per-scene set / location
@@ -213,6 +225,7 @@ function toDTO(story: StoryRow, scenes: SceneRow[], mediaBaseUrl: string): Story
     finalPosterUrl: story.final_poster_key ? `${mediaBaseUrl}/${story.final_poster_key}` : null,
     musicTrack: tryParseJson<{ name: string; url: string } | null>(story.music_track, null),
     voiceoverUrl: story.voiceover_url ?? null,
+    finalApproved: story.final_approved === 1,
     createdAt: story.created_at,
     updatedAt: story.updated_at,
     scenes: scenes
@@ -226,8 +239,11 @@ function toDTO(story: StoryRow, scenes: SceneRow[], mediaBaseUrl: string): Story
         dialogue: scene.dialogue,
         onScreenText: scene.on_screen_text,
         status: scene.status,
-        imageUrl: scene.image_url,
-        videoUrl: scene.video_url,
+        // Prefer the durable R2 mirror — provider URLs expire after ~7 days,
+        // and reviewing a clip that vanishes mid-review is useless.
+        imageUrl: scene.image_key ? `${mediaBaseUrl}/${scene.image_key}` : scene.image_url,
+        videoUrl: scene.video_key ? `${mediaBaseUrl}/${scene.video_key}` : scene.video_url,
+        videoApproved: scene.video_approved === 1,
         error: scene.error,
         locationName: scene.location_name ?? null,
         locationDescription: scene.location_description ?? null,
@@ -843,10 +859,13 @@ export async function validateStoryboard(storyId: string): Promise<StoryDTO> {
 /** Lot B — regenerate ONE storyboard image (1.5 credits) without touching the others. */
 export async function regenerateSceneImage(storyId: string, sceneId: string): Promise<StoryDTO> {
   const { db, story } = await loadOwnedStory(storyId);
-  if (story.status !== "storyboard") {
+  // Reachable from the Storyboard AND from the Video step's "fix the scene
+  // first" path — correcting at image level is ~15x cheaper than re-rolling
+  // video motion, so the review screen has to be able to offer it.
+  if (story.status !== "storyboard" && story.status !== "generating") {
     throw new ApiJobError(
       "storyboard_locked",
-      "Storyboard images can only be regenerated at the Storyboard step.",
+      "Scene images can only be regenerated at the Storyboard step or while reviewing clips.",
       { status: 409 },
     );
   }
@@ -854,6 +873,17 @@ export async function regenerateSceneImage(storyId: string, sceneId: string): Pr
   const scene = scenes.find((s) => s.id === sceneId);
   if (!scene) {
     throw new ApiJobError("scene_not_found", "Scene not found.", { status: 404 });
+  }
+  // A new still invalidates this scene's clip: drop it (and its approval) so the
+  // stale clip cannot be approved and the film cannot be cut from it. The user
+  // re-records this scene after checking the new image.
+  if (scene.video_url || scene.video_key || scene.video_approved) {
+    await updateScene(db, storyId, sceneId, {
+      video_url: null,
+      video_key: null,
+      video_job_id: null,
+      video_approved: 0,
+    });
   }
   // Phase 1: a scene already generating must not get a second job (double click).
   if (scene.status === "image_generating" && scene.image_job_id) {
@@ -1522,6 +1552,171 @@ export async function validateAudio(storyId: string): Promise<StoryDTO> {
   return getStory(storyId);
 }
 
+/**
+ * Approve (or withdraw approval from) one clip at the Video step.
+ * The story stays at the Video step; only the gate into Audio depends on this.
+ */
+export async function setSceneVideoApproval(
+  storyId: string,
+  sceneId: string,
+  approved: boolean,
+): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "generating") {
+    throw new ApiJobError("clips_locked", "Clips are reviewed at the Video step.", { status: 409 });
+  }
+  const scenes = await loadScenes(db, storyId);
+  const scene = scenes.find((s) => s.id === sceneId);
+  if (!scene) throw new ApiJobError("scene_not_found", "That scene is not part of this story.", { status: 404 });
+  if (scene.status !== "ready") {
+    throw new ApiJobError("clip_not_ready", "That clip has not finished recording yet.", { status: 409 });
+  }
+  await updateScene(db, storyId, sceneId, { video_approved: approved ? 1 : 0 });
+  return getStory(storyId);
+}
+
+/**
+ * THE GATE. Every clip must have been looked at before the story moves on:
+ * this is the only way into the Audio step, and Audio is the only way to Final
+ * cut — so a film can never be cut from unreviewed clips.
+ */
+export async function approveClipsAndContinue(storyId: string): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "generating") return getStory(storyId);
+  const scenes = await loadScenes(db, storyId);
+  const unreviewed = scenes.filter((s) => s.status !== "ready" || s.video_approved !== 1);
+  if (unreviewed.length > 0) {
+    throw new ApiJobError(
+      "clips_unreviewed",
+      unreviewed.length === scenes.length
+        ? `Watch and approve every clip before continuing — ${scenes.length} still to review.`
+        : `${unreviewed.length} clip${unreviewed.length === 1 ? "" : "s"} still to review (scene ${unreviewed.map((s) => s.idx + 1).join(", ")}).`,
+      { status: 409 },
+    );
+  }
+  await updateStory(db, storyId, { status: "audio", current_step: "audio", progress_label: "Mix your sound…" });
+  return getStory(storyId);
+}
+
+/**
+ * Re-record ONE clip (the review screen's "Redo" → regenerate the video only).
+ * Approval is reset when the new clip lands, so a re-roll must be reviewed again.
+ * Charged at the scene's exact clip length.
+ */
+export async function regenerateSceneVideo(storyId: string, sceneId: string): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  // Allowed at the Video step, and after the film was cut — "Redo a scene" from
+  // the Final cut review reopens the pipeline rather than being a dead end.
+  if (story.status !== "generating" && story.status !== "ready") {
+    throw new ApiJobError("clips_locked", "Clips can only be re-recorded at the Video step.", { status: 409 });
+  }
+  const scenes = await loadScenes(db, storyId);
+  const scene = scenes.find((s) => s.id === sceneId);
+  if (!scene) throw new ApiJobError("scene_not_found", "That scene is not part of this story.", { status: 404 });
+  if (!scene.image_url) {
+    throw new ApiJobError("no_still", "This scene has no still frame — regenerate the image first.", { status: 409 });
+  }
+  if (scene.status === "video_generating" && scene.video_job_id) return getStory(storyId);
+
+  // Reopening a finished film: the other clips stay (they are already mirrored),
+  // the cut is no longer final, and the assembly job is released so the re-cut
+  // can run once every clip is approved again.
+  if (story.status === "ready") {
+    await updateStory(db, storyId, {
+      status: "generating",
+      current_step: "video",
+      final_approved: 0,
+      final_video_key: null,
+      final_poster_key: null,
+      progress_label: "Re-recording a scene…",
+    });
+    await db
+      ?.prepare("UPDATE story_assembly_jobs SET status = 'stopped' WHERE id = ?")
+      .bind(storyId)
+      .run();
+    story.status = "generating";
+  }
+
+  const cost = videoClipCostCredits(sceneDurationSeconds(story.duration_sec, story.scene_count));
+  const available = await getDisplayCredits();
+  if (available < cost) {
+    throw new ApiJobError(
+      "insufficient_credits",
+      `Not enough credits to re-record this clip: ${cost} needed, ${Math.floor(available)} available.`,
+      { status: 402 },
+    );
+  }
+
+  const template = getTemplate(story.template_id);
+  const location = getLocation(story.location_id, template);
+  // Phase 1: only the claim winner may submit the paid job.
+  await withClaim(claimStore(db), `scene:${storyId}:${sceneId}:video:new`, async () => {
+    await submitSceneVideo(db, story, scene, scene.image_url ?? "", template, location);
+  });
+  return getStory(storyId);
+}
+
+/**
+ * Edit ONE scene's description from the Video step's "fix the scene first" path.
+ *
+ * Kept in sync with script_json, because the Script step reads that — editing
+ * only the scene row would leave the two disagreeing and the user would find
+ * their correction apparently lost when they reopened Script. The scene's clip is
+ * cleared: a new description invalidates it, and it must be reviewed again after
+ * the image and clip are redone.
+ */
+export async function updateSceneDescription(
+  storyId: string,
+  sceneId: string,
+  description: string,
+): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "storyboard" && story.status !== "generating") {
+    throw new ApiJobError(
+      "scene_locked",
+      "A scene's description can be edited at the Storyboard step or while reviewing clips.",
+      { status: 409 },
+    );
+  }
+  const scenes = await loadScenes(db, storyId);
+  const scene = scenes.find((s) => s.id === sceneId);
+  if (!scene) throw new ApiJobError("scene_not_found", "That scene is not part of this story.", { status: 404 });
+
+  const next = description.trim();
+  if (next.length === 0) {
+    throw new ApiJobError("scene_empty", "A scene needs a description.", { status: 400 });
+  }
+
+  await updateScene(db, storyId, sceneId, {
+    description: next,
+    // The clip no longer matches the words: drop it so it cannot be approved.
+    video_url: null,
+    video_key: null,
+    video_job_id: null,
+    video_approved: 0,
+  });
+
+  // Mirror the edit into the stored script so the Script step shows it too.
+  try {
+    const parsed = story.script_json ? (JSON.parse(story.script_json) as Script) : null;
+    if (parsed && Array.isArray(parsed.scenes) && parsed.scenes[scene.idx]) {
+      parsed.scenes[scene.idx] = { ...parsed.scenes[scene.idx], description: next };
+      await updateStory(db, storyId, { script_json: JSON.stringify(parsed) });
+    }
+  } catch {
+    // A malformed script_json must not block the scene edit itself.
+  }
+  return getStory(storyId);
+}
+
+/** Accept the finished film at the Final cut review. */
+export async function acceptFinalCut(storyId: string): Promise<StoryDTO> {
+  const { db, story } = await loadOwnedStory(storyId);
+  if (story.status !== "ready") return getStory(storyId);
+  await updateStory(db, storyId, { final_approved: 1, progress_label: "Final cut accepted." });
+  return getStory(storyId);
+}
+
 async function submitSceneImage(
   owner: string,
   db: D1Database | null,
@@ -1677,6 +1872,52 @@ function jobError(_job: unknown, fallback: string): string {
  * image completes it lands on "image_ready" — the story WAITS there until the
  * user validates the storyboard; videos are never launched automatically.
  */
+/**
+ * Copy provider media into this app's own R2 bucket and return the R2 key.
+ *
+ * Higgsfield's media URLs expire (roughly a week), so a clip still being reviewed
+ * can simply vanish — the reason the review gate needs durable media first.
+ * Best-effort by design: a mirror failure must never fail generation, it just
+ * leaves the provider URL in place.
+ */
+async function mirrorSceneMedia(sourceUrl: string, key: string, contentType: string): Promise<string | null> {
+  if (!sourceUrl) return null;
+  try {
+    const { bindings } = await import("./bindings.server");
+    const storage = bindings().STORAGE;
+    if (!storage) return null;
+    const response = await fetch(sourceUrl);
+    if (!response.ok) return null;
+    // Buffered rather than streamed: R2's put() typing rejects the DOM
+    // ReadableStream, and these clips are small enough that it costs nothing.
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength === 0) return null;
+    await storage.put(key, bytes, { httpMetadata: { contentType } });
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Mirror any scene media that predates the R2 mirror, so a clip recorded before
+ * this shipped does not expire mid-review. Incremental: each scene is done once,
+ * on read, and the work is skipped entirely once a key exists. Best-effort.
+ */
+async function backfillSceneMirrors(db: D1Database | null, story: StoryRow, scenes: SceneRow[]): Promise<void> {
+  if (!db) return;
+  for (const scene of scenes) {
+    if (scene.image_url && !scene.image_key) {
+      const key = await mirrorSceneMedia(scene.image_url, `stories/${story.id}/scenes/${scene.id}.png`, "image/png");
+      if (key) await updateScene(db, story.id, scene.id, { image_key: key });
+    }
+    if (scene.video_url && !scene.video_key) {
+      const key = await mirrorSceneMedia(scene.video_url, `stories/${story.id}/scenes/${scene.id}.mp4`, "video/mp4");
+      if (key) await updateScene(db, story.id, scene.id, { video_key: key });
+    }
+  }
+}
+
 async function resolveStoryboard(db: D1Database | null, story: StoryRow, scenes: SceneRow[]): Promise<SceneRow[]> {
   const provider = getGenerationProvider();
   const next: SceneRow[] = [];
@@ -1700,8 +1941,10 @@ async function resolveStoryboard(db: D1Database | null, story: StoryRow, scenes:
       }
       if (job.phase === "completed") {
         const imageUrl = job.rawUrl ?? "";
-        await updateScene(db, story.id, scene.id, { status: "image_ready", image_url: imageUrl, retry_count: 0 });
-        next.push({ ...scene, status: "image_ready", image_url: imageUrl });
+        const imageKey = await mirrorSceneMedia(imageUrl, `stories/${story.id}/scenes/${scene.id}.png`, "image/png");
+        const patch = { status: "image_ready", image_url: imageUrl, retry_count: 0, ...(imageKey ? { image_key: imageKey } : {}) };
+        await updateScene(db, story.id, scene.id, patch);
+        next.push({ ...scene, ...patch });
       } else if (job.phase === "failed") {
         const exact = jobError(job, "Scene image failed to generate. Regenerate it.");
         await updateScene(db, story.id, scene.id, { status: "failed", error: exact });
@@ -1767,8 +2010,12 @@ async function resolveGeneration(db: D1Database | null, story: StoryRow, scenes:
       }
       if (job.phase === "completed") {
         const videoUrl = job.rawUrl ?? "";
-        await updateScene(db, story.id, scene.id, { status: "ready", video_url: videoUrl });
-        next.push({ ...scene, status: "ready", video_url: videoUrl });
+        const videoKey = await mirrorSceneMedia(videoUrl, `stories/${story.id}/scenes/${scene.id}.mp4`, "video/mp4");
+        // A freshly recorded clip is unreviewed by definition — this is what
+        // resets approval after a "Redo".
+        const patch = { status: "ready", video_url: videoUrl, video_approved: 0, ...(videoKey ? { video_key: videoKey } : {}) };
+        await updateScene(db, story.id, scene.id, patch);
+        next.push({ ...scene, ...patch });
       } else if (job.phase === "failed") {
         const exact = jobError(job, "Scene video failed to generate.");
         await updateScene(db, story.id, scene.id, { status: "failed", error: exact });
@@ -1863,6 +2110,16 @@ async function resolveStory(
       scenes = await resolveStoryboard(db, story, scenes);
       return { story, scenes };
     }
+    // Durable media for anything that has it, whichever step the story is at —
+    // an old clip gets mirrored the first time it is looked at.
+    if (
+      story.status === "generating" ||
+      story.status === "audio" ||
+      story.status === "assembling" ||
+      story.status === "ready"
+    ) {
+      await backfillSceneMirrors(db, story, scenes);
+    }
     if (story.status !== "generating") {
       return { story, scenes };
     }
@@ -1870,10 +2127,17 @@ async function resolveStory(
     const allReady = scenes.every((s) => s.status === "ready");
     const anyFailed = scenes.some((s) => s.status === "failed");
     if (allReady) {
-      // Lot E: videos done → the Audio step (dialogue toggles, music, voiceover).
-      // The user validates the mix; validateAudio then starts assembly.
-      await updateStory(db, story.id, { status: "audio", current_step: "audio", progress_label: "Mix your sound…" });
-      story = { ...story, status: "audio", current_step: "audio", progress_label: "Mix your sound…" };
+      // Clip review gate: clips are done, so the story HOLDS here until every one
+      // has been looked at. approveClipsAndContinue is the only way into Audio,
+      // and Audio is the only way to Final cut — so a film can never be cut from
+      // unreviewed clips.
+      const approved = scenes.filter((s) => s.video_approved === 1).length;
+      const label =
+        approved === scenes.length
+          ? `All ${scenes.length} clips approved — continue to Audio.`
+          : `Review your clips — ${approved} of ${scenes.length} approved.`;
+      await updateStory(db, story.id, { progress_label: label });
+      story = { ...story, progress_label: label };
     } else if (anyFailed && scenes.every((s) => s.status === "ready" || s.status === "failed")) {
       // Surface the precise cause instead of a generic message.
       const firstFailure = scenes.find((s) => s.status === "failed" && s.error)?.error;

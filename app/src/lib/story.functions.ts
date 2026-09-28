@@ -20,6 +20,11 @@ import {
   unlinkCharacter,
   updateScript,
   applySelfieReference,
+  acceptFinalCut,
+  approveClipsAndContinue,
+  regenerateSceneVideo,
+  setSceneVideoApproval,
+  updateSceneDescription,
   validateAudio,
   validateCharacters,
   validateLocations,
@@ -236,6 +241,33 @@ export const setStoryVoiceoverFn = createServerFn({ method: "POST" })
 export const validateAudioFn = createServerFn({ method: "POST" })
   .validator(z.object({ storyId: z.string().min(1) }))
   .handler(({ data }) => validateAudio(data.storyId));
+
+// ─── Clip review gate (Video step) ───────────────────────────────────────────
+
+/** Approve (or withdraw approval from) one clip. */
+export const setSceneVideoApprovalFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1), sceneId: z.string().min(1), approved: z.boolean() }))
+  .handler(({ data }) => setSceneVideoApproval(data.storyId, data.sceneId, data.approved));
+
+/** THE GATE into Audio: every clip must have been reviewed. */
+export const approveClipsAndContinueFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1) }))
+  .handler(({ data }) => approveClipsAndContinue(data.storyId));
+
+/** Edit one scene's description (video review → fix the scene first). */
+export const updateSceneDescriptionFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1), sceneId: z.string().min(1), description: z.string().max(2000) }))
+  .handler(({ data }) => updateSceneDescription(data.storyId, data.sceneId, data.description));
+
+/** Re-record one clip (the review screen's "Redo"). */
+export const regenerateSceneVideoFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1), sceneId: z.string().min(1) }))
+  .handler(({ data }) => regenerateSceneVideo(data.storyId, data.sceneId));
+
+/** Accept the finished film at the Final cut review. */
+export const acceptFinalCutFn = createServerFn({ method: "POST" })
+  .validator(z.object({ storyId: z.string().min(1) }))
+  .handler(({ data }) => acceptFinalCut(data.storyId));
 
 export const remasterStoryFn = createServerFn({ method: "POST" })
   .validator(z.object({ storyId: z.string().min(1) }))

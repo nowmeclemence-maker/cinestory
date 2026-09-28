@@ -20,11 +20,14 @@ import { AssetLibraryModal, type AssetLibraryItem } from "@/components/asset-lib
 import { UploadField } from "@/components/upload-field";
 import { mediaRefToAssetItem } from "@/lib/higgsfield-generation-results";
 import { attachErrorMessage, isAttachable } from "@/lib/character-references";
+import { ClipReviewView, FinalCutActions, allClipsRecorded } from "@/components/story/clip-review";
 import {
   getStoryFn, updateScriptFn, regenerateScriptFn, validateScriptFn, validateStoryboardFn,
   regenerateSceneImageFn, listStoryCharactersFn, proposeCharactersFn, linkCharacterFn,
   unlinkCharacterFn, generateCharacterPortraitFn, validateCharactersFn, addCharacterImageFn,
   applySelfieReferenceFn,
+  setSceneVideoApprovalFn, approveClipsAndContinueFn, regenerateSceneVideoFn,
+  updateSceneDescriptionFn, acceptFinalCutFn,
   listLibraryCharactersFn, proposeLocationsFn, setSceneLocationFn, generateSceneLocationFn,
   validateLocationsFn, setSceneDialogueFn, setStoryMusicFn, setStoryVoiceoverFn, validateAudioFn,
   listMusicTracksFn, createMusicTrackFn, remasterStoryFn,
@@ -34,7 +37,7 @@ import { triggerAssembly } from "@/lib/story.browser";
 import { MUSIC_PRESETS } from "@/lib/music-presets";
 import type { StoryDTO, SceneDTO } from "@/lib/story-engine.server";
 import type { CastMemberDTO } from "@/lib/story-engine.server";
-import { sceneDurationSeconds, stepIndex, stepLabel, STORY_LOCATIONS, STORY_STEPS, videoClipCostCredits } from "@/lib/story-templates";
+import { IMAGE_COST_CREDITS, sceneDurationSeconds, stepIndex, stepLabel, STORY_LOCATIONS, STORY_STEPS, videoClipCostCredits } from "@/lib/story-templates";
 
 export const Route = createFileRoute("/workspace")({
   component: WorkspacePage,
@@ -65,6 +68,7 @@ function WorkspacePage() {
   const [regeneratingScene, setRegeneratingScene] = useState<string | null>(null);
   const [castBusy, setCastBusy] = useState<string | null>(null);
   const [remastering, setRemastering] = useState(false);
+  const [clipBusy, setClipBusy] = useState<string | null>(null);
 
   const { data: story, isLoading } = useQuery({
     queryKey: ["workspace", storyId],
@@ -552,6 +556,83 @@ function WorkspacePage() {
     }
   };
 
+  // ── Clip review gate (Video step) ──────────────────────────────────────────
+  const handleApproveClip = async (sceneId: string, approved: boolean) => {
+    if (!story) return;
+    setClipBusy(sceneId);
+    setStageError(null);
+    try {
+      await setSceneVideoApprovalFn({ data: { storyId: story.id, sceneId, approved } });
+      await invalidate();
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setClipBusy(null);
+    }
+  };
+
+  const handleRecordClip = async (sceneId: string) => {
+    if (!story) return;
+    setClipBusy(sceneId);
+    setStageError(null);
+    try {
+      await regenerateSceneVideoFn({ data: { storyId: story.id, sceneId } });
+      await invalidate();
+      toast.success("Recording a fresh take…");
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setClipBusy(null);
+    }
+  };
+
+  // The cheaper correction: fix the wording, regenerate the still, then record.
+  const handleFixScene = async (sceneId: string, description: string) => {
+    if (!story) return;
+    setClipBusy(sceneId);
+    setStageError(null);
+    try {
+      await updateSceneDescriptionFn({ data: { storyId: story.id, sceneId, description } });
+      await regenerateSceneImageFn({ data: { storyId: story.id, sceneId } });
+      await invalidate();
+      toast.success(`Regenerating the still (${IMAGE_COST_CREDITS} credits) — then record the clip`);
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setClipBusy(null);
+    }
+  };
+
+  const handleApproveAllClips = async () => {
+    if (!story) return;
+    setClipBusy("all");
+    setStageError(null);
+    try {
+      await approveClipsAndContinueFn({ data: { storyId: story.id } });
+      await invalidate();
+      toast.success("All clips approved — on to Audio");
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setClipBusy(null);
+    }
+  };
+
+  const handleAcceptFinalCut = async () => {
+    if (!story) return;
+    setClipBusy("all");
+    setStageError(null);
+    try {
+      await acceptFinalCutFn({ data: { storyId: story.id } });
+      await invalidate();
+      toast.success("Final cut accepted");
+    } catch (error) {
+      getStageError(error);
+    } finally {
+      setClipBusy(null);
+    }
+  };
+
   const handleValidateAudio = async () => {
     if (!story || story.status !== "audio") return;
     setStageError(null);
@@ -699,6 +780,16 @@ function WorkspacePage() {
           onUploadSetPhoto={(sceneId, file) => void handleUploadSetPhoto(sceneId, file)}
           onValidate={backToCurrentStep}
         />
+      ) : viewStep === "video" ? (
+        <ClipReviewView
+          story={story}
+          busy={clipBusy}
+          error={stageError}
+          onApprove={(sceneId, approved) => void handleApproveClip(sceneId, approved)}
+          onRecord={(sceneId) => void handleRecordClip(sceneId)}
+          onFixScene={(sceneId, description) => void handleFixScene(sceneId, description)}
+          onApproveAll={() => void handleApproveAllClips()}
+        />
       ) : viewStep === "storyboard" ? (
         <StoryboardView
           story={story}
@@ -755,8 +846,20 @@ function WorkspacePage() {
                     Story Workspace
                   </Typography>
                   <Typography as="p" variant="body-sm-regular" color="secondary" truncate>
-                    {story.title ?? story.idea} · {story.templateTitle} · ~{Math.round(story.estimatedCost)} credits
+                    {story.title ?? story.idea} · {story.templateTitle}
                   </Typography>
+                  {/* No click should be a surprise: what this story has cost, and
+                      the estimate while anything is still pending. */}
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-cine-accent-soft px-2.5 py-0.5 text-[11px] font-medium text-cine-accent">
+                      {Math.round(story.spentCost)} credits spent
+                    </span>
+                    {story.spentCost < story.estimatedCost && story.status !== "ready" ? (
+                      <span className="rounded-full bg-q-transparent-light-10 px-2.5 py-0.5 text-[11px] text-q-text-secondary">
+                        ~{Math.round(story.estimatedCost - story.spentCost)} credits left in this film
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
               {story.status === "ready" && story.finalVideoUrl && (
@@ -845,10 +948,28 @@ function WorkspacePage() {
                 onSetVoiceover={(file) => void handleSetVoiceover(file)}
                 onValidate={() => void handleValidateAudio()}
               />
+            ) : story.status === "generating" && allClipsRecorded(story) ? (
+              <ClipReviewView
+                story={story}
+                busy={clipBusy}
+                error={stageError}
+                onApprove={(sceneId, approved) => void handleApproveClip(sceneId, approved)}
+                onRecord={(sceneId) => void handleRecordClip(sceneId)}
+                onFixScene={(sceneId, description) => void handleFixScene(sceneId, description)}
+                onApproveAll={() => void handleApproveAllClips()}
+              />
             ) : story.status === "generating" || story.status === "assembling" ? (
               <ProductionView story={story} />
             ) : story.status === "ready" && story.finalVideoUrl ? (
-              <ReadyView story={story} />
+              <div className="space-y-4">
+                <ReadyView story={story} />
+                <FinalCutActions
+                  story={story}
+                  busy={clipBusy === "all"}
+                  onAccept={() => void handleAcceptFinalCut()}
+                  onRedoScene={() => goToStep("video")}
+                />
+              </div>
             ) : story.status === "failed" ? (
               <div className="rounded-lg border border-cine-danger/30 bg-cine-danger-soft p-6">
                 <Typography as="h3" variant="title-sm-semi-bold" color="danger">

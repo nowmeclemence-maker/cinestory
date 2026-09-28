@@ -71,7 +71,8 @@ CREATE TABLE stories (
   estimated_cost REAL NOT NULL DEFAULT 0,
   spent_cost REAL NOT NULL DEFAULT 0,
   music_track TEXT,
-  voiceover_url TEXT
+  voiceover_url TEXT,
+  final_approved INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE story_scenes (
   id TEXT PRIMARY KEY,
@@ -93,7 +94,10 @@ CREATE TABLE story_scenes (
   location_ref TEXT,
   location_source TEXT,
   location_job_id TEXT,
-  dialogue_enabled INTEGER NOT NULL DEFAULT 1
+  dialogue_enabled INTEGER NOT NULL DEFAULT 1,
+  image_key TEXT,
+  video_key TEXT,
+  video_approved INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE story_characters (
   story_id TEXT NOT NULL,
