@@ -1562,7 +1562,9 @@ export async function setSceneVideoApproval(
   approved: boolean,
 ): Promise<StoryDTO> {
   const { db, story } = await loadOwnedStory(storyId);
-  if (story.status !== "generating") {
+  // Also allowed at Audio: a clip can be spotted as wrong after the gate, and
+  // going back to fix it must not be a dead end.
+  if (story.status !== "generating" && story.status !== "audio") {
     throw new ApiJobError("clips_locked", "Clips are reviewed at the Video step.", { status: 409 });
   }
   const scenes = await loadScenes(db, storyId);
@@ -1605,9 +1607,9 @@ export async function approveClipsAndContinue(storyId: string): Promise<StoryDTO
  */
 export async function regenerateSceneVideo(storyId: string, sceneId: string): Promise<StoryDTO> {
   const { db, story } = await loadOwnedStory(storyId);
-  // Allowed at the Video step, and after the film was cut — "Redo a scene" from
-  // the Final cut review reopens the pipeline rather than being a dead end.
-  if (story.status !== "generating" && story.status !== "ready") {
+  // Allowed at the Video step, at Audio, and after the film was cut — going back
+  // to fix a clip must reopen the pipeline rather than being a dead end.
+  if (story.status !== "generating" && story.status !== "audio" && story.status !== "ready") {
     throw new ApiJobError("clips_locked", "Clips can only be re-recorded at the Video step.", { status: 409 });
   }
   const scenes = await loadScenes(db, storyId);
@@ -1618,10 +1620,11 @@ export async function regenerateSceneVideo(storyId: string, sceneId: string): Pr
   }
   if (scene.status === "video_generating" && scene.video_job_id) return getStory(storyId);
 
-  // Reopening a finished film: the other clips stay (they are already mirrored),
-  // the cut is no longer final, and the assembly job is released so the re-cut
-  // can run once every clip is approved again.
-  if (story.status === "ready") {
+  // Reopening the pipeline (from Audio, or from a finished film): the other clips
+  // stay (they are already mirrored), the cut is no longer final, and the
+  // assembly job is released so the re-cut can run once the clips are approved
+  // again. Production returns to the Video step, where the gate re-engages.
+  if (story.status !== "generating") {
     await updateStory(db, storyId, {
       status: "generating",
       current_step: "video",

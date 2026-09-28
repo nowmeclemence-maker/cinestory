@@ -126,11 +126,19 @@ describe("the Video step gate", () => {
     await expect(setSceneVideoApproval(STORY_ID, ids[2], true)).rejects.toThrow(/not finished recording/);
   });
 
-  test("approval is only possible at the Video step", async () => {
-    const ids = seedRecordedStory("audio");
+  test("approval is refused once the film is being or has been cut", async () => {
+    const ids = seedRecordedStory("assembling");
     const { setSceneVideoApproval } = await import("@/lib/story-engine.server");
 
     await expect(setSceneVideoApproval(STORY_ID, ids[0], true)).rejects.toThrow(/Video step/);
+  });
+
+  test("a clip can still be approved at Audio — going back is not a dead end", async () => {
+    const ids = seedRecordedStory("audio");
+    const { setSceneVideoApproval } = await import("@/lib/story-engine.server");
+
+    const story = await setSceneVideoApproval(STORY_ID, ids[0], true);
+    expect(story.scenes[0].videoApproved).toBe(true);
   });
 
   test("an unknown scene is rejected", async () => {
