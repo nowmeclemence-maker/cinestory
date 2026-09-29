@@ -4,6 +4,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { buildFilterComplex } from "./filter-graph.mjs";
 
 const run = promisify(execFile);
 const FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
@@ -56,14 +57,6 @@ function readJson(req) {
   });
 }
 
-function escapeDrawtext(text) {
-  return String(text ?? "")
-    .replace(/\\/g, "\\\\")
-    .replace(/:/g, "\\:")
-    .replace(/'/g, "\u2019")
-    .slice(0, 90);
-}
-
 async function downloadFile(url, destPath) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`download failed (${response.status}): ${url}`);
@@ -99,56 +92,14 @@ async function runJob(job) {
       await downloadFile(voiceoverUrl, voiceoverPath);
       extraInputs.push("-i", voiceoverPath);
     }
-    const musicInputIdx = clipPaths.length;
-    const voiceInputIdx = musicUrl ? clipPaths.length + 1 : clipPaths.length;
-
-    const filters = [];
-    const vLabels = [];
-    const aLabels = [];
-    for (let i = 0; i < clipPaths.length; i++) {
-      const parts = [
-        `[${i}:v]scale=1080:1920:force_original_aspect_ratio=decrease`,
-        `pad=1080:1920:(ow-iw)/2:(oh-ih)/2`,
-        `setsar=1`,
-      ];
-      // Lot E: a scene's caption is burned only when its dialogue is enabled.
-      const caption = clips[i].dialogueEnabled === false ? "" : clips[i].onScreenText;
-      if (caption) {
-        parts.push(
-          `drawtext=fontfile=${FONT}:text='${escapeDrawtext(caption)}':fontsize=52:fontcolor=white:borderw=3:bordercolor=black@0.75:x=(w-text_w)/2:y=h-260`,
-        );
-      }
-      if (i === 0 && hook) {
-        parts.push(
-          `drawtext=fontfile=${FONT}:text='${escapeDrawtext(hook)}':fontsize=58:fontcolor=white:borderw=4:bordercolor=black@0.8:x=(w-text_w)/2:y=140:enable='lte(t,3)'`,
-        );
-      }
-      if (i === clipPaths.length - 1 && cta) {
-        parts.push(
-          `drawtext=fontfile=${FONT}:text='${escapeDrawtext(cta)}':fontsize=50:fontcolor=white:borderw=3:bordercolor=black@0.8:x=(w-text_w)/2:y=h-160`,
-        );
-      }
-      filters.push(`${parts.join(",")}[v${i}]`);
-      vLabels.push(`[v${i}]`);
-      aLabels.push(`[${i}:a]`);
-    }
-    const concatLine = `${vLabels.join("")}${aLabels.join("")}concat=n=${clipPaths.length}:v=1:a=1[outv][outa]`;
-    const audioLines = [];
-
-    // Lot E: music mixed low under the film (faded in/out), voiceover on top.
-    let finalAudioLabel = "[outa]";
-    if (musicPath) {
-      audioLines.push(`[${musicInputIdx}:a]volume=0.14,afade=t=in:st=0:d=1[mus]`);
-      audioLines.push(`${finalAudioLabel}[mus]amix=inputs=2:duration=first:normalize=0[mix1]`);
-      finalAudioLabel = "[mix1]";
-    }
-    if (voiceoverPath) {
-      audioLines.push(`[${voiceInputIdx}:a]volume=0.9[vo]`);
-      audioLines.push(`${finalAudioLabel}[vo]amix=inputs=2:duration=first:normalize=0[mix2]`);
-      finalAudioLabel = "[mix2]";
-    }
-
-    const filterComplex = [...filters, concatLine, ...audioLines].join(";");
+    const { filterComplex, finalAudioLabel } = buildFilterComplex({
+      clips,
+      font: FONT,
+      hook,
+      cta,
+      hasMusic: musicPath != null,
+      hasVoiceover: voiceoverPath != null,
+    });
 
     const outputPath = path.join(dir, "final.mp4");
     const posterPath = path.join(dir, "poster.jpg");
